@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id    Int    @id @default(autoincrement())
+  name  String
+  adminChatId Int
+  vectorStoreId String?
+  threadId String?
+  sources CompanySource[]
+}
+
+model CompanySource {
+  id    Int    @id @default(autoincrement())
+  type String
+  name String?
+  link String
+
+  company Company @relation(fields: [companyId], references: [id])
+  companyId Int
+
+  chatHistory CompanyChatHistory[]
+
+  meta String?
+}
+
+model CompanyChatHistory {
+  id    Int    @id @default(autoincrement())
+  sender String
+  message String
+  source CompanySource @relation(fields: [sourceId], references: [id])
+  sourceId Int
+  timestamp DateTime
+}
