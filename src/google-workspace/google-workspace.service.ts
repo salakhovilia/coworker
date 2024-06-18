@@ -42,7 +42,7 @@ export class GoogleWorkspaceService {
       },
     });
 
-    const auth = this.authFactory(JSON.parse(source.meta));
+    const auth = this.authFactory(source.meta);
 
     google
       .drive({
@@ -65,7 +65,7 @@ export class GoogleWorkspaceService {
       },
     });
 
-    const auth = this.authFactory(JSON.parse(source.meta));
+    const auth = this.authFactory(source.meta);
 
     const response = await google
       .calendar({ auth, version: 'v3' })
@@ -84,7 +84,7 @@ export class GoogleWorkspaceService {
       },
     });
 
-    const client = this.authFactory(JSON.parse(source.meta));
+    const client = this.authFactory(source.meta);
 
     const response = await google
       .calendar({ auth: client, version: 'v3' })
@@ -117,7 +117,7 @@ export class GoogleWorkspaceService {
       throw new BadRequestException('Source not found');
     }
 
-    const auth = this.authFactory(JSON.parse(source.meta));
+    const auth = this.authFactory(source.meta);
 
     console.log(event);
     return google.calendar({ auth, version: 'v3' }).events.insert(event);

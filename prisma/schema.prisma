@@ -3,16 +3,14 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("PG_COWORKER_CON")
 }
 
 model Company {
   id    Int    @id @default(autoincrement())
   name  String
   adminChatId Int
-  vectorStoreId String?
-  threadId String?
   sources CompanySource[]
 }
 
@@ -25,16 +23,6 @@ model CompanySource {
   company Company @relation(fields: [companyId], references: [id])
   companyId Int
 
-  chatHistory CompanyChatHistory[]
-
-  meta String?
+  meta Json?
 }
 
-model CompanyChatHistory {
-  id    Int    @id @default(autoincrement())
-  sender String
-  message String
-  source CompanySource @relation(fields: [sourceId], references: [id])
-  sourceId Int
-  timestamp DateTime
-}

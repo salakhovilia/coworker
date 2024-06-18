@@ -21,22 +21,10 @@ export function newCompanyStageFactory(
   newCompanyScene.on(message('text'), async (ctx) => {
     const name = ctx.message.text as string;
 
-    const company = await prisma.company.create({
+    await prisma.company.create({
       data: {
         adminChatId: ctx.chat.id,
         name,
-      },
-    });
-
-    const agentData = await agent.initAgent(company.id);
-
-    await prisma.company.update({
-      where: {
-        id: company.id,
-      },
-      data: {
-        threadId: agentData.threadId,
-        vectorStoreId: agentData.storeId,
       },
     });
 

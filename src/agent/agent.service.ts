@@ -3,11 +3,19 @@ import { ConfigService } from '@nestjs/config';
 import { Company } from '@prisma/client';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma/prisma.service';
-import { TextContentBlock } from 'openai/resources/beta/threads/messages';
+import axios from 'axios';
+import * as process from 'node:process';
+import { FormData } from 'formdata-node';
 
 @Injectable()
 export class AgentService {
   private openai: OpenAI;
+  private agentApi = axios.create({
+    baseURL:
+      process.env.NODE_ENV === 'production'
+        ? 'http://agent:8000/api/agent'
+        : 'http://localhost:8000/api/agent',
+  });
 
   constructor(
     private readonly config: ConfigService,
@@ -18,54 +26,25 @@ export class AgentService {
     });
   }
 
-  async initAgent(companyId: number) {
-    const store = await this.openai.beta.vectorStores.create({
-      name: String(companyId),
-      metadata: { companyId: String(companyId) },
-    });
-
-    const thread = await this.openai.beta.threads.create({
-      metadata: {
-        companyId: String(companyId),
-      },
-      tool_resources: {
-        file_search: {
-          vector_store_ids: [store.id],
-        },
+  async addToContext(content: string, companyId: number) {
+    await this.agentApi.post('/text', {
+      content,
+      meta: {
+        companyId,
       },
     });
-
-    return { threadId: thread.id, storeId: store.id };
   }
 
   async ask(question: string, company: Company) {
-    const data = await this.buildChatData(company.id, 15 * 24 * 60 * 60 * 1000);
-    console.log(question, data);
-
-    await this.openai.beta.threads.messages.create(company.threadId, {
-      content: `${data}\n##Question\n${question}`,
-      role: 'user',
+    const response = await this.agentApi.post('/query', {
+      question,
+      companyId: company.id,
     });
 
-    const response = await this.openai.beta.threads.runs.createAndPoll(
-      company.threadId,
-      {
-        assistant_id: this.config.getOrThrow('ASSISTANT_ID'),
-        // max_completion_tokens: 100,
-      },
-    );
-
-    const messages = await this.openai.beta.threads.messages.list(
-      company.threadId,
-      { run_id: response.id },
-    );
-
-    return (messages.data[0].content[0] as TextContentBlock).text.value;
+    return response.data.response;
   }
 
   async generateEvent(command: string, company: Company) {
-    const data = await this.buildChatData(company.id, 24 * 60 * 60 * 1000);
-
     const calendars = await this.prisma.companySource.findMany({
       where: {
         companyId: company.id,
@@ -85,7 +64,7 @@ export class AgentService {
         },
         {
           role: 'user',
-          content: `${data}\n${calendarsData}\n## Command\n${command}`,
+          content: `${calendarsData}\n## Command\n${command}`,
         },
       ],
       model: 'gpt-3.5-turbo',
@@ -104,69 +83,54 @@ export class AgentService {
     return event;
   }
 
-  async uploadFile(company: Company, mimetype: string, file: Response) {
+  async uploadFile(
+    company: Company,
+    file: ReadableStream,
+    mimetype: string,
+    contentLength: string,
+    contentType: string,
+  ) {
     const allowedTypes = [
-      'text/x-c',
-      'text/x-csharp',
-      'text/x-c++',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/html',
-      'text/x-java',
-      'application/json',
+      // 'text/x-c',
+      // 'text/x-csharp',
+      // 'text/x-c++',
+      // 'application/msword',
+      // 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      // 'text/html',
+      // 'text/x-java',
+      // 'application/json',
       'text/markdown',
       'application/pdf',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      'text/x-python',
-      'text/x-script.python',
-      'text/x-ruby',
-      'text/x-tex',
+      // 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // 'text/x-python',
+      // 'text/x-script.python',
+      // 'text/x-ruby',
+      // 'text/x-tex',
       'text/plain',
-      'text/css',
-      'text/javascript',
-      'application/x-sh',
-      'application/typescript',
+      // 'text/css',
+      // 'text/javascript',
+      // 'application/x-sh',
+      // 'application/typescript',
     ];
 
     if (!allowedTypes.includes(mimetype)) {
       return;
     }
 
-    const response = await this.openai.beta.vectorStores.files.uploadAndPoll(
-      company.vectorStoreId,
-      file,
-    );
+    const form = new FormData();
+    form.set('file', file);
 
-    console.log(response);
-  }
-
-  async buildChatData(companyId: number, window: number) {
-    const sources = await this.prisma.companySource.findMany({
-      where: {
-        companyId,
-        chatHistory: {
-          every: {
-            timestamp: { gt: new Date(Date.now() - window) },
-          },
-        },
-      },
-      include: {
-        chatHistory: true,
+    await this.agentApi.post('/files', form, {
+      params: {
+        companyId: company.id,
       },
     });
+  }
 
-    let history = '';
-
-    for (const source of sources) {
-      if (source.type === 'chat') {
-        const messagesText = source.chatHistory
-          .map((m) => `${m.sender}(${m.timestamp.toISOString()}): ${m.message}`)
-          .join(',');
-
-        history += `## Chat history\n${messagesText}\n`;
-      }
-    }
-
-    return history;
+  async uploadFileViaLink(company: Company, link: string) {
+    await this.agentApi.post('/files/link', {
+      link,
+      companyId: company.id,
+    });
   }
 }

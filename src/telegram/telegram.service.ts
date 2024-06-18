@@ -36,17 +36,12 @@ export class TelegramService {
     this.bot.command('ask', this.onAsk.bind(this));
     this.bot.command('addEvent', this.onAddEvent.bind(this));
 
-    const stage = new Scenes.Stage<CoworkerContext>(
-      [
-        newCompanyStageFactory(this.prisma, this.agent),
-        newTelegramSourceStageFactory(this.prisma),
-        newGoogleDriveSourceStageFactory(this.prisma, this.googleWorkspace),
-        newGoogleCalendarSourceStageFactory(this.prisma, this.googleWorkspace),
-      ],
-      {
-        ttl: 10,
-      },
-    );
+    const stage = new Scenes.Stage<CoworkerContext>([
+      newCompanyStageFactory(this.prisma, this.agent),
+      newTelegramSourceStageFactory(this.prisma),
+      newGoogleDriveSourceStageFactory(this.prisma, this.googleWorkspace),
+      newGoogleCalendarSourceStageFactory(this.prisma, this.googleWorkspace),
+    ]);
 
     this.bot.use(stage.middleware());
 
@@ -116,9 +111,6 @@ export class TelegramService {
       where: {
         type: 'chat',
         link: String(ctx.chat.id),
-        company: {
-          threadId: { not: null },
-        },
       },
       include: {
         company: true,
@@ -129,13 +121,23 @@ export class TelegramService {
       return ctx.reply('Source not found');
     }
 
-    const response = await this.agent.ask(ctx.payload, source.company);
+    try {
+      const response = await this.agent.ask(
+        `${ctx.message.from.username}(${new Date(ctx.message.date).toISOString()}):${ctx.payload}`,
+        source.company,
+      );
 
-    if (response) {
-      await ctx.reply(response, {
-        parse_mode: 'Markdown',
-        reply_parameters: { message_id: ctx.message.message_id },
-      });
+      if (response) {
+        await ctx.reply(response, {
+          parse_mode: 'Markdown',
+          reply_parameters: { message_id: ctx.message.message_id },
+        });
+      } else {
+        await ctx.reply('I have no answer :(');
+      }
+    } catch (err) {
+      Logger.error(err);
+      ctx.reply(err);
     }
   }
 
@@ -167,14 +169,14 @@ export class TelegramService {
         title: 'Telegram',
         scene: ScenesIds.newTelegramSource,
       },
-      {
-        title: 'Google Drive',
-        scene: ScenesIds.newGoogleDriveSource,
-      },
-      {
-        title: 'Google Calendar',
-        scene: ScenesIds.newGoogleCalendarSource,
-      },
+      // {
+      //   title: 'Google Drive',
+      //   scene: ScenesIds.newGoogleDriveSource,
+      // },
+      // {
+      //   title: 'Google Calendar',
+      //   scene: ScenesIds.newGoogleCalendarSource,
+      // },
     ];
 
     const BUTTONS_PER_ROW = 2;
@@ -239,14 +241,10 @@ export class TelegramService {
       return;
     }
 
-    await this.prisma.companyChatHistory.create({
-      data: {
-        sourceId: source.id,
-        sender: ctx.message.from?.username || 'unknown',
-        message,
-        timestamp: new Date(ctx.message.date * 1000),
-      },
-    });
+    await this.agent.addToContext(
+      `[${ctx.chat.title}, ${ctx.chat.id}]${ctx.message.from.username}(${new Date(ctx.message.date * 1000).toISOString()}): ${message}`,
+      source.companyId,
+    );
   }
 
   async onDocument(ctx) {
@@ -254,7 +252,6 @@ export class TelegramService {
       where: {
         link: String(ctx.chat.id),
         type: 'chat',
-        company: { vectorStoreId: { not: null } },
       },
       include: { company: true },
     });
@@ -263,15 +260,17 @@ export class TelegramService {
       return;
     }
 
+    const allowedTypes = ['text/markdown', 'application/pdf', 'text/plain'];
+
+    if (!allowedTypes.includes(ctx.message.document.mime_type)) {
+      return;
+    }
+
     const link = await ctx.telegram.getFileLink(ctx.message.document.file_id);
 
-    const response = await fetch(link, { method: 'get' });
-
-    this.agent
-      .uploadFile(source.company, ctx.message.document.mime_type, response)
-      .catch((err) => {
-        console.error(err);
-      });
+    this.agent.uploadFileViaLink(source.company, link).catch((err) => {
+      console.error(err);
+    });
   }
 
   async callbackAuthGoogleCalendar(chatId: number, sourceId: number) {

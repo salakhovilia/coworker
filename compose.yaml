@@ -1,0 +1,40 @@
+services:
+  server:
+    restart: unless-stopped
+    image: ghcr.io/salakhovilia/server
+    env_file:
+      - .env
+    ports:
+      - 3000:3000
+    depends_on:
+      db:
+        condition: service_healthy
+
+  agent:
+    restart: unless-stopped
+    image: ghcr.io/salakhovilia/agent
+    env_file:
+      - .env
+    ports:
+      - 8000:8000
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: pgvector/pgvector:0.7.0-pg15
+    restart: always
+    user: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    ports:
+      - 127.0.0.1:5432:5432
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  db-data:
+

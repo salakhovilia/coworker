@@ -1,0 +1,53 @@
+services:
+  server:
+    platform: linux/amd64
+    image: ghcr.io/salakhovilia/server
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - 3000:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    container_name: server
+  agent:
+    image: ghcr.io/salakhovilia/agent
+    platform: linux/amd64
+    build:
+      context: agent
+      dockerfile: Dockerfile
+    env_file:
+      - ./agent/.env
+    ports:
+      - 8000:8000
+    depends_on:
+      db:
+        condition: service_healthy
+    container_name: agent
+    volumes:
+      - uploads:/app/uploads
+
+  db:
+    platform: linux/amd64
+    image: pgvector/pgvector:0.7.0-pg15
+    restart: always
+    user: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    ports:
+      - 5432:5432
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    container_name: db
+volumes:
+  db-data:
+  uploads:
+
