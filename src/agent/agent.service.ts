@@ -26,19 +26,33 @@ export class AgentService {
     });
   }
 
-  async addToContext(content: string, companyId: number) {
+  async addToContext(
+    content: string,
+    companyId: number,
+    meta: Record<string, any>,
+  ) {
     await this.agentApi.post('/text', {
       content,
-      meta: {
-        companyId,
-      },
+      companyId,
+      meta,
     });
   }
 
-  async ask(question: string, company: Company) {
+  async suggest(message: string, companyId: number, meta: Record<string, any>) {
+    const response = await this.agentApi.post('/suggest', {
+      message,
+      companyId,
+      meta,
+    });
+
+    return response.data.response;
+  }
+
+  async ask(question: string, companyId: number, meta: Record<string, any>) {
     const response = await this.agentApi.post('/query', {
       question,
-      companyId: company.id,
+      companyId,
+      meta,
     });
 
     return response.data.response;
@@ -127,10 +141,15 @@ export class AgentService {
     });
   }
 
-  async uploadFileViaLink(company: Company, link: string) {
+  async uploadFileViaLink(
+    companyId: number,
+    link: string,
+    meta: Record<string, any>,
+  ) {
     await this.agentApi.post('/files/link', {
       link,
-      companyId: company.id,
+      companyId,
+      meta,
     });
   }
 }

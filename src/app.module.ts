@@ -16,6 +16,7 @@ if (process.env.NODE_ENV !== 'production') {
 @Module({
   imports: [
     ConfigModule.forRoot({
+      cache: true,
       envFilePath: configPath,
     }),
     EventEmitterModule.forRoot(),

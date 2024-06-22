@@ -30,6 +30,19 @@ services:
     volumes:
       - uploads:/app/uploads
 
+  langfuse-server:
+    image: langfuse/langfuse:2
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3030:3000"
+    env_file:
+      - agent/.env
+    environment:
+      - TELEMETRY_ENABLED=false
+      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
+
   db:
     platform: linux/amd64
     image: pgvector/pgvector:0.7.0-pg15

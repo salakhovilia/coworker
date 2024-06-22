@@ -17,7 +17,7 @@ markdown_converter = MarkdownToDocument()
 pdf_converter = PyPDFToDocument()
 document_joiner = DocumentJoiner()
 document_cleaner = DocumentCleaner()
-document_splitter = DocumentSplitter(split_by="word", split_length=150, split_overlap=50)
+document_splitter = DocumentSplitter(split_by="sentence", split_length=150, split_overlap=50)
 document_writer = DocumentWriter(DocumentStore, policy=DuplicatePolicy.SKIP)
 
 FilePipeline = Pipeline()

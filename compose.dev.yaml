@@ -1,24 +1,17 @@
 services:
-  server:
-    build:
-      context: .
-    env_file:
-      - dev.env
-    ports:
-      - 3000:3000
+  langfuse-server:
+    image: langfuse/langfuse:2
     depends_on:
       db:
         condition: service_healthy
-  agent:
-    build:
-      context: agent
-    env_file:
-      - ./agent/.env
     ports:
-      - 8000:8000
-    depends_on:
-      db:
-        condition: service_healthy
+      - "3030:3030"
+    env_file:
+      - agent/.env
+    environment:
+      - PORT=3030
+      - TELEMETRY_ENABLED=false
+      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
 
   db:
     image: pgvector/pgvector:0.7.0-pg15

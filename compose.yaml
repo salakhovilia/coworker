@@ -20,6 +20,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  langfuse-server:
+    restart: unless-stopped
+    image: langfuse/langfuse:2
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3030:3000"
+    env_file:
+      - .env
+    environment:
+      - TELEMETRY_ENABLED=false
+      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
+
   db:
     image: pgvector/pgvector:0.7.0-pg15
     restart: always

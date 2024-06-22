@@ -13,6 +13,8 @@ import { newGoogleDriveSourceStageFactory } from './stages/new-gdrive-source.sta
 import { GoogleWorkspaceService } from '../google-workspace/google-workspace.service';
 import { newGoogleCalendarSourceStageFactory } from './stages/new-google-calendar-source.stage';
 import { OnEvent } from '@nestjs/event-emitter';
+import { Chat } from 'telegraf/typings/core/types/typegram';
+import * as process from 'node:process';
 
 @Injectable()
 export class TelegramService {
@@ -106,7 +108,7 @@ export class TelegramService {
     ctx.scene.enter(ScenesIds.newCompany);
   }
 
-  async onAsk(ctx: CoworkerContext) {
+  async onAsk(ctx) {
     const source = await this.prisma.companySource.findFirst({
       where: {
         type: 'chat',
@@ -121,11 +123,19 @@ export class TelegramService {
       return ctx.reply('Source not found');
     }
 
+    const chat = ctx.chat as Chat.GroupChat;
+
+    const question = ctx.payload || (ctx.message.text as string);
+
     try {
-      const response = await this.agent.ask(
-        `${ctx.message.from.username}(${new Date(ctx.message.date).toISOString()}):${ctx.payload}`,
-        source.company,
-      );
+      const response = await this.agent.ask(question, source.companyId, {
+        date: new Date(ctx.message.date * 1000).toISOString(),
+        type: 'telegram-question',
+        chatId: ctx.chat.id,
+        chatTitle: chat.title,
+        authorUsername: ctx.message.from.username,
+        authorFirstName: ctx.message.from.first_name,
+      });
 
       if (response) {
         await ctx.reply(response, {
@@ -241,10 +251,39 @@ export class TelegramService {
       return;
     }
 
-    await this.agent.addToContext(
-      `[${ctx.chat.title}, ${ctx.chat.id}]${ctx.message.from.username}(${new Date(ctx.message.date * 1000).toISOString()}): ${message}`,
-      source.companyId,
-    );
+    if (message.includes(this.configService.get('TELEGRAM_BOT_ID'))) {
+      await this.onAsk(ctx);
+      return;
+    }
+
+    const meta = {
+      date: new Date(ctx.message.date * 1000).toISOString(),
+      type: 'telegram-message',
+      chatId: ctx.chat.id,
+      chatTitle: ctx.chat.title,
+      authorUsername: ctx.message.from.username,
+      authorFirstName: ctx.message.from.first_name,
+    };
+
+    this.agent
+      .suggest(message, source.companyId, meta)
+      .then(async (answer) => {
+        if (!answer) return;
+
+        Logger.log(`Question: ${message}\n$Answer: ${answer}`);
+
+        if (process.env.NODE_ENV === 'dev' || source.companyId === 2) {
+          await ctx.reply(answer, {
+            parse_mode: 'Markdown',
+            reply_parameters: { message_id: ctx.message.message_id },
+          });
+        }
+      })
+      .catch((err) => {
+        Logger.error(err);
+      });
+
+    await this.agent.addToContext(message, source.companyId, meta);
   }
 
   async onDocument(ctx) {
@@ -268,9 +307,18 @@ export class TelegramService {
 
     const link = await ctx.telegram.getFileLink(ctx.message.document.file_id);
 
-    this.agent.uploadFileViaLink(source.company, link).catch((err) => {
-      console.error(err);
-    });
+    this.agent
+      .uploadFileViaLink(source.company.id, link, {
+        date: new Date(ctx.message.date * 1000).toISOString(),
+        type: 'telegram-file',
+        chatId: ctx.chat.id,
+        chatTitle: ctx.chat.title,
+        authorUsername: ctx.message.from.username,
+        authorFirstName: ctx.message.from.first_name,
+      })
+      .catch((err) => {
+        console.error(err);
+      });
   }
 
   async callbackAuthGoogleCalendar(chatId: number, sourceId: number) {

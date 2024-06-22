@@ -32,3 +32,5 @@ compose.dev.yaml
 **/dist
 LICENSE
 README.md
+*.env
+!sample.env

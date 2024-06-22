@@ -1,6 +1,17 @@
-Context:
+these messages/data may contain the answer to the question:
 {% for document in documents %}
-    {{ document.content }}
+{% if document.score > 0.7 and document.score < 0.95 %}
+{% if document.meta['type'] == 'telegram-chat' %}
+[{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
+{% else %}
+{{ document.content }}
+{% endif %}
+{% endif %}
 {% endfor %}
 
-Question: {{ question }}
+Question:
+{% if meta['type'] == 'telegram-question' %}
+[{{meta['type']}}][{{meta['date']}}][{{meta['chatTitle']}}][{{meta['chatId']}}]{{meta['authorUsername']}}({{meta['authorFirstName']}}): {{ question }}
+{% else %}
+{{ question }}
+{% endif %}
