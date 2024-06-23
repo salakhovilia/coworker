@@ -1,11 +1,27 @@
 these messages/data may contain the answer to the question:
-{% for document in documents %}
+{% for document in embedding_documents %}
 {% if document.score > 0.7 and document.score < 0.95 %}
-{% if document.meta['type'] == 'telegram-chat' %}
+{% if document.meta['type'] == 'telegram-message' %}
 [{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
 {% else %}
 {{ document.content }}
 {% endif %}
+{% endif %}
+{% endfor %}
+{% for document in keyword_documents %}
+{% if document.meta['type'] == 'telegram-message' %}
+[{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
+{% else %}
+{{ document.content }}
+{% endif %}
+{% endfor %}
+
+Current context:
+{% for document in context_documents %}
+{% if document.meta['type'] == 'telegram-message' %}
+[{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
+{% else %}
+{{ document.content }}
 {% endif %}
 {% endfor %}
 

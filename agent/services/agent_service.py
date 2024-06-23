@@ -1,4 +1,5 @@
-import langfuse
+import datetime
+
 from langfuse import Langfuse
 
 from pipelines.query_pipeline import QueryPipeline
@@ -14,13 +15,33 @@ class AgentService:
         llm = QueryPipeline.get_component('llm')
         llm.system_prompt = queryPrompt.prompt
 
+        date = datetime.datetime.fromtimestamp(round(datetime.datetime.now().timestamp()) - 24 * 60 * 60)
+
         result = QueryPipeline.run({
             "embedder": {"text": question},
-            "retriever": {
+            "embedding_retriever": {
                 "filters": {
                     "operator": "AND",
                     "conditions": [
                         {"field": "meta.companyId", "operator": "==", "value": str(companyId)},
+                    ],
+                }
+            },
+            "keyword_retriever": {
+                "query": question,
+                "filters": {
+                    "operator": "AND",
+                    "conditions": [
+                        {"field": "meta.companyId", "operator": "==", "value": str(companyId)},
+                    ],
+                }
+            },
+            "context_retriever": {
+                "filters": {
+                    "operator": "AND",
+                    "conditions": [
+                        {"field": "meta.companyId", "operator": "==", "value": str(companyId)},
+                        {"field": "meta.date", "operator": ">", "value": date.isoformat()},
                     ],
                 }
             },

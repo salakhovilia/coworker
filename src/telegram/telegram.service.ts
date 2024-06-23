@@ -127,8 +127,9 @@ export class TelegramService {
 
     const question = ctx.payload || (ctx.message.text as string);
 
+    let response;
     try {
-      const response = await this.agent.ask(question, source.companyId, {
+      response = await this.agent.ask(question, source.companyId, {
         date: new Date(ctx.message.date * 1000).toISOString(),
         type: 'telegram-question',
         chatId: ctx.chat.id,
@@ -136,18 +137,17 @@ export class TelegramService {
         authorUsername: ctx.message.from.username,
         authorFirstName: ctx.message.from.first_name,
       });
-
-      if (response) {
-        await ctx.reply(response, {
-          parse_mode: 'Markdown',
-          reply_parameters: { message_id: ctx.message.message_id },
-        });
-      } else {
-        await ctx.reply('I have no answer :(');
-      }
     } catch (err) {
       Logger.error(err);
       ctx.reply(err);
+      return;
+    }
+
+    if (response) {
+      await ctx.reply(response, {
+        parse_mode: 'Markdown',
+        reply_parameters: { message_id: ctx.message.message_id },
+      });
     }
   }
 

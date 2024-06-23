@@ -7,7 +7,8 @@ DocumentStore = PgvectorDocumentStore(
     vector_function="cosine_similarity",
     search_strategy="hnsw",
     embedding_dimension=1536,
-    hnsw_recreate_index_if_exists=True
+    hnsw_recreate_index_if_exists=True,
+    language='simple'
 )
 
 Retriever = PgvectorEmbeddingRetriever(document_store=DocumentStore)
