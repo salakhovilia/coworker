@@ -39,7 +39,7 @@ QueryPipeline = Pipeline()
 QueryPipeline.add_component("tracer", LangfuseConnector("Query pipeline"))
 QueryPipeline.add_component("embedder", OpenAITextEmbedder(api_key=Secret.from_env_var("OPEN_API_KEY")))
 QueryPipeline.add_component("embedding_retriever", PgvectorEmbeddingRetriever(document_store=DocumentStore, top_k=10))
-QueryPipeline.add_component("keyword_retriever", PgvectorKeywordRetriever(document_store=DocumentStore))
+QueryPipeline.add_component("keyword_retriever", PgvectorKeywordRetriever(document_store=DocumentStore, top_k=5))
 QueryPipeline.add_component("context_retriever", FilterRetriever(document_store=DocumentStore))
 QueryPipeline.add_component("prompt_builder", CustomPromptBuilder(template=queryTemplate, trim_blocks=True))
 QueryPipeline.add_component(

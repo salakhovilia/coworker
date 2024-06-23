@@ -146,6 +146,7 @@ export class TelegramService {
     if (response) {
       await ctx.reply(response, {
         parse_mode: 'Markdown',
+        disable_notification: true,
         reply_parameters: { message_id: ctx.message.message_id },
       });
     }
@@ -251,7 +252,11 @@ export class TelegramService {
       return;
     }
 
-    if (message.includes(this.configService.get('TELEGRAM_BOT_ID'))) {
+    if (
+      message.includes(this.configService.get('TELEGRAM_BOT_ID')) ||
+      ctx.message.reply_to_message?.from.username ===
+        this.configService.get('TELEGRAM_BOT_ID')
+    ) {
       await this.onAsk(ctx);
       return;
     }
@@ -270,11 +275,12 @@ export class TelegramService {
       .then(async (answer) => {
         if (!answer) return;
 
-        Logger.log(`Question: ${message}\n$Answer: ${answer}`);
+        Logger.log(`Question: ${message}, Answer: ${answer}`);
 
         if (process.env.NODE_ENV === 'dev' || source.companyId === 2) {
           await ctx.reply(answer, {
             parse_mode: 'Markdown',
+            disable_notification: true,
             reply_parameters: { message_id: ctx.message.message_id },
           });
         }

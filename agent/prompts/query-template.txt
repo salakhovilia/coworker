@@ -1,6 +1,6 @@
-these messages/data may contain the answer to the question:
+## These messages/data may contain the answer to the question:
 {% for document in embedding_documents %}
-{% if document.score > 0.7 and document.score < 0.95 %}
+{% if document.score > 0.75 and document.score < 0.95 %}
 {% if document.meta['type'] == 'telegram-message' %}
 [{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
 {% else %}
@@ -16,7 +16,7 @@ these messages/data may contain the answer to the question:
 {% endif %}
 {% endfor %}
 
-Current context:
+## Current context:
 {% for document in context_documents %}
 {% if document.meta['type'] == 'telegram-message' %}
 [{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
@@ -25,7 +25,12 @@ Current context:
 {% endif %}
 {% endfor %}
 
-Question:
+## Additional instructions
+{% if optional_answer %}
+Answer only if you are more than 80% sure that your answer will be correct and on topic, if you are not sure, then do not answer anything
+{% endif %}
+
+## Question:
 {% if meta['type'] == 'telegram-question' %}
 [{{meta['type']}}][{{meta['date']}}][{{meta['chatTitle']}}][{{meta['chatId']}}]{{meta['authorUsername']}}({{meta['authorFirstName']}}): {{ question }}
 {% else %}
