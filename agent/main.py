@@ -129,12 +129,15 @@ async def add_file_via_link(file: AddFileLinkRequest):
 async def query(query: QueryRequest):
     result = await agentService.query(query.question, query.companyId, query.meta)
 
-    return {"response": result}
+    if not result:
+        return {"response": None}
+
+    return {"response": result['message']}
 
 
 @app.post("/api/agent/suggest")
 async def suggest(request: SuggestRequest):
-    result = await agentService.suggest(request.message, request.companyId)
+    result = await agentService.suggest(request.message, request.companyId, request.meta)
 
     return {"response": result}
 

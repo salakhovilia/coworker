@@ -125,7 +125,11 @@ export class TelegramService {
 
     const chat = ctx.chat as Chat.GroupChat;
 
-    const question = ctx.payload || (ctx.message.text as string);
+    let question = ctx.payload || (ctx.message.text as string);
+
+    if (ctx.message.reply_to_message) {
+      question = `> ${ctx.message.reply_to_message.text}\n${question}`;
+    }
 
     let response;
     try {
@@ -274,8 +278,6 @@ export class TelegramService {
       .suggest(message, source.companyId, meta)
       .then(async (answer) => {
         if (!answer) return;
-
-        Logger.log(`Question: ${message}, Answer: ${answer}`);
 
         if (process.env.NODE_ENV === 'dev' || source.companyId === 2) {
           await ctx.reply(answer, {

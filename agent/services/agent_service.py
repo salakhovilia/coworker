@@ -1,15 +1,15 @@
 import datetime
+import json
 
 from langfuse import Langfuse
 
 from pipelines.query_pipeline import QueryPipeline
-from pipelines.suggest_pipeline import SuggestPipeline
 
 langfuse = Langfuse()
 
 
 class AgentService:
-    async def query(self, question:str, companyId: int, meta:dict, optional_answer=False):
+    async def query(self, question:str, companyId: int, meta:dict):
         queryPrompt = langfuse.get_prompt(name='Query')
 
         llm = QueryPipeline.get_component('llm')
@@ -43,33 +43,25 @@ class AgentService:
                     "operator": "AND",
                     "conditions": [
                         {"field": "meta.companyId", "operator": "==", "value": str(companyId)},
+                        {"field": "meta.type", "operator": "!=", "value": 'telegram-file'},
+                        {"field": "meta.chatId", "operator": "==", "value": str(meta['chatId'])},
                         {"field": "content", "operator": "!=", "value": question},
                         {"field": "meta.date", "operator": ">", "value": date.isoformat()},
                     ],
                 }
             },
-            "prompt_builder": {"question": question, 'meta': meta, 'optional_answer': optional_answer},
+            "prompt_builder": {"question": question, 'meta': meta},
         })
 
         if len(result['llm']['replies']) == 0 or not result['llm']['replies'][0]:
             return None
 
-        return result['llm']['replies'][0]
+        return json.loads(result['llm']['replies'][0])
 
-    async def suggest(self, message: str, companyId: int):
-        suggested_result = SuggestPipeline.run({
-            "embedder": {"text": message},
-            "retriever": {
-                "filters": {
-                    "operator": "AND",
-                    "conditions": [
-                        {"field": "meta.companyId", "operator": "==", "value": str(companyId)},
-                    ],
-                }
-            },
-        })
+    async def suggest(self, message: str, companyId: int, meta:dict):
+        response = await self.query(message, companyId, meta)
 
-        docs = suggested_result['retriever']['documents']
+        if not response or response['score'] < 7:
+            return None
 
-        if len(docs) and 0.85 < docs[0].score:
-            return await self.query(message, companyId, {}, optional_answer=True)
+        return response['message']

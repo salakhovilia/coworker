@@ -44,7 +44,9 @@ QueryPipeline.add_component("context_retriever", FilterRetriever(document_store=
 QueryPipeline.add_component("prompt_builder", CustomPromptBuilder(template=queryTemplate, trim_blocks=True))
 QueryPipeline.add_component(
     "llm",
-    OpenAIGenerator(model='gpt-4o', api_key=Secret.from_env_var("OPEN_API_KEY")),
+    OpenAIGenerator(model='gpt-4o', api_key=Secret.from_env_var("OPEN_API_KEY"), generation_kwargs={
+        'response_format': {"type": "json_object"}
+    }),
 )
 
 QueryPipeline.connect("embedder.embedding", "embedding_retriever.query_embedding")
