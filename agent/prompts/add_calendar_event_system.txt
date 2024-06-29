@@ -1,0 +1,3 @@
+Generate event in json format for google calendar api based on chat history
+{ "calendarId": "<Id of calendar>", "requestBody": {"summary":"<title of event>", "description": "<description of event>", "start": {"date"?: "<date>", "dateTime"?: "<dateTime>", "timeZone"?: "<timezone>"}, "end": {"date"?: "<date>", "dateTime"?: "<dateTime>", "timeZone"?: "<timezone>"}}},
+

@@ -5,7 +5,7 @@ import { google } from 'googleapis';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { IState } from './types/state';
-import { CompanySource } from '@prisma/client';
+import { CompanySource, Prisma } from '@prisma/client';
 
 @Injectable()
 export class GoogleWorkspaceService {
@@ -163,7 +163,7 @@ export class GoogleWorkspaceService {
         companyId: Number(state.companyId),
         link: '',
         type: state.sourceType,
-        meta: JSON.stringify(r.tokens),
+        meta: r.tokens as Prisma.JsonObject,
       },
     });
 

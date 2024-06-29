@@ -188,10 +188,10 @@ export class TelegramService {
       //   title: 'Google Drive',
       //   scene: ScenesIds.newGoogleDriveSource,
       // },
-      // {
-      //   title: 'Google Calendar',
-      //   scene: ScenesIds.newGoogleCalendarSource,
-      // },
+      {
+        title: 'Google Calendar',
+        scene: ScenesIds.newGoogleCalendarSource,
+      },
     ];
 
     const BUTTONS_PER_ROW = 2;
@@ -236,10 +236,20 @@ export class TelegramService {
       return;
     }
 
-    const event = await this.agent.generateEvent(ctx.payload, source.company);
+    try {
+      const event = await this.agent.generateEvent(
+        ctx.payload,
+        source.company.id,
+        this.getMetaFromCtx(ctx, 'telegram-message'),
+      );
 
-    await this.googleWorkspace.addCalendarEvent(source.companyId, event);
-    ctx.reply('Done');
+      console.log(event);
+
+      await this.googleWorkspace.addCalendarEvent(source.companyId, event);
+      ctx.reply('Done');
+    } catch (err) {
+      Logger.error(err);
+    }
   }
 
   async onText(ctx) {
@@ -265,14 +275,7 @@ export class TelegramService {
       return;
     }
 
-    const meta = {
-      date: new Date(ctx.message.date * 1000).toISOString(),
-      type: 'telegram-message',
-      chatId: ctx.chat.id,
-      chatTitle: ctx.chat.title,
-      authorUsername: ctx.message.from.username,
-      authorFirstName: ctx.message.from.first_name,
-    };
+    const meta = this.getMetaFromCtx(ctx, 'telegram-message');
 
     this.agent
       .suggest(message, source.companyId, meta)
@@ -355,6 +358,17 @@ export class TelegramService {
     await this.googleWorkspace.addCalendarSource(ctx.match[2], ctx.match[1]);
 
     await ctx.reply(`Your calendar was added`);
+  }
+
+  private getMetaFromCtx(ctx, type) {
+    return {
+      date: new Date(ctx.message.date * 1000).toISOString(),
+      type,
+      chatId: ctx.chat.id,
+      chatTitle: ctx.chat.title,
+      authorUsername: ctx.message.from.username,
+      authorFirstName: ctx.message.from.first_name,
+    };
   }
 
   @OnEvent('sources.connected')

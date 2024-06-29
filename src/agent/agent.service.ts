@@ -58,43 +58,28 @@ export class AgentService {
     return response.data.response;
   }
 
-  async generateEvent(command: string, company: Company) {
+  async generateEvent(command: string, companyId: number, meta) {
     const calendars = await this.prisma.companySource.findMany({
       where: {
-        companyId: company.id,
+        companyId,
         type: 'gcalendar',
+        link: {
+          not: '',
+        },
+        meta: {
+          not: null,
+        },
       },
     });
 
-    const calendarsData =
-      '## Calendars\n' +
-      calendars.map((c) => `name:${c.name} - id:${c.link}`).join(',');
-
-    const response = await this.openai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: `Generate event in json format for google calendar api based on chat history, current dateTime ${new Date().toISOString()}, { "calendarId": "<Id of calendar>", "requestBody": {"summary":"<title of event>", "description": "<description of event>", "start": {"date"?: "<date>", "dateTime"?: "<dateTime>", "timeZone"?: "<timezone>"}, "end": {"date"?: "<date>", "dateTime"?: "<dateTime>", "timeZone"?: "<timezone>"}}}`,
-        },
-        {
-          role: 'user',
-          content: `${calendarsData}\n## Command\n${command}`,
-        },
-      ],
-      model: 'gpt-3.5-turbo',
-      user: String(company.id),
-      response_format: {
-        type: 'json_object',
-      },
+    const response = await this.agentApi.post('calendars/event', {
+      calendars: calendars.map((c) => ({ name: c.name, id: c.link })),
+      command,
+      companyId,
+      meta,
     });
 
-    const event = response.choices[0].message.content;
-
-    try {
-      return JSON.parse(event);
-    } catch (err) {}
-
-    return event;
+    return response.data.response;
   }
 
   async uploadFile(

@@ -2,6 +2,7 @@ import mimetypes
 import os
 from tempfile import NamedTemporaryFile
 import urllib.request
+from typing import List
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, HTTPException
@@ -13,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from pipelines.file_pipeline import FilePipeline, MIMETYPES
 from pipelines.store import DocumentStore
-from pipelines.suggest_pipeline import SuggestPipeline
 from pipelines.text_embeder import TextEmbedder
 from services.agent_service import AgentService
 
@@ -47,9 +47,22 @@ class QueryRequest(BaseModel):
     companyId: int
     meta: dict
 
+
 class SuggestRequest(BaseModel):
     message: str
     companyId: int
+    meta: dict
+
+
+class CalendarRequest(BaseModel):
+    id: str
+    name: str
+
+
+class GenerateCalendarEventRequest(BaseModel):
+    companyId: int
+    calendars: List[CalendarRequest]
+    command: str
     meta: dict
 
 
@@ -138,6 +151,12 @@ async def query(query: QueryRequest):
 @app.post("/api/agent/suggest")
 async def suggest(request: SuggestRequest):
     result = await agentService.suggest(request.message, request.companyId, request.meta)
+
+    return {"response": result}
+
+@app.post("/api/agent/calendars/event")
+async def suggest(request: GenerateCalendarEventRequest):
+    result = await agentService.generate_event(request.calendars, request.command, request.companyId, request.meta)
 
     return {"response": result}
 
