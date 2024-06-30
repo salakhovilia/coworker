@@ -1,16 +1,14 @@
 These messages/data may contain the answer to the question:
 {% for document in embedding_documents %}
-{% if document.score > 0.75 and document.score < 0.95 %}
 {% if document.meta['type'] == 'telegram-message' %}
-[{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
+messageDate:{{meta['date']}},chatTitle:{{meta['chatTitle']}},chatId:{{meta['chatId']}},telegramUsername:{{meta['authorUsername']}},telegramUserFirstName:{{meta['authorFirstName']}},message:{{ document.content }}
 {% else %}
 {{ document.content }}
-{% endif %}
 {% endif %}
 {% endfor %}
 {% for document in keyword_documents %}
 {% if document.meta['type'] == 'telegram-message' %}
-[{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
+messageDate:{{meta['date']}},chatTitle:{{meta['chatTitle']}},chatId:{{meta['chatId']}},telegramUsername:{{meta['authorUsername']}},telegramUserFirstName:{{meta['authorFirstName']}},message:{{ document.content }}
 {% else %}
 {{ document.content }}
 {% endif %}
@@ -19,7 +17,7 @@ These messages/data may contain the answer to the question:
 Current context:
 {% for document in context_documents %}
 {% if document.meta['type'] == 'telegram-message' %}
-[{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
+messageDate:{{meta['date']}},chatTitle:{{meta['chatTitle']}},chatId:{{meta['chatId']}},telegramUsername:{{meta['authorUsername']}},telegramUserFirstName:{{meta['authorFirstName']}},message:{{ document.content }}
 {% else %}
 {{ document.content }}
 {% endif %}
@@ -27,7 +25,7 @@ Current context:
 
 Question:
 {% if meta['type'] == 'telegram-question' %}
-[{{meta['type']}}][{{meta['date']}}][{{meta['chatTitle']}}][{{meta['chatId']}}]{{meta['authorUsername']}}({{meta['authorFirstName']}}): {{ question }}
+messageDate:{{meta['date']}},chatTitle:{{meta['chatTitle']}},chatId:{{meta['chatId']}},telegramUsername:{{meta['authorUsername']}},telegramUserFirstName:{{meta['authorFirstName']}},question:{{ question }}
 {% else %}
 {{ question }}
 {% endif %}

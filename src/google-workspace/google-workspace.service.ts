@@ -207,6 +207,7 @@ export class GoogleWorkspaceService {
   generateAuthUrl(state: IState, scope: string[]) {
     return this.oAuth2Client.generateAuthUrl({
       access_type: 'offline',
+      prompt: 'consent',
       scope,
       include_granted_scopes: true,
       state: Buffer.from(JSON.stringify(state)).toString('base64url'),
