@@ -67,7 +67,7 @@ class AgentService:
 
         return response['message']
 
-    async def generate_event(self, calendars, command: str, companyId: int, meta: dict):
+    async def generate_event(self, calendars, events, command: str, companyId: int, meta: dict):
         date = datetime.datetime.fromtimestamp(round(datetime.datetime.now().timestamp()) - 6 * 60 * 60)
 
         result = CalendarsEventsPipeline.run({
@@ -83,7 +83,10 @@ class AgentService:
                     ],
                 }
             },
-            "prompt_builder": {"command": command, 'meta': meta, 'calendars': calendars},
+            "prompt_builder": {
+                "command": command, 'meta': meta,
+                'calendars': calendars, 'events': events,
+            },
         })
 
         return json.loads(result['llm']['replies'][0])

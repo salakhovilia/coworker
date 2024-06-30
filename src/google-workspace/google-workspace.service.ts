@@ -23,7 +23,7 @@ export class GoogleWorkspaceService {
     const client = new OAuth2Client(
       this.config.getOrThrow('CLIENT_ID'),
       this.config.getOrThrow('CLIENT_SECRET'),
-      `${this.config.getOrThrow('HOST')}/gdrive/auth/callback`,
+      `${this.config.getOrThrow('HOST')}/api/gdrive/auth/callback`,
     );
 
     if (tokens) {
@@ -97,11 +97,51 @@ export class GoogleWorkspaceService {
       data: {
         link: response.data.items[calendarIndex].id,
         name: response.data.items[calendarIndex].summary,
+        meta: {
+          ...(source.meta as Prisma.JsonObject),
+          timeZone: response.data.items[calendarIndex].timeZone,
+        },
       },
     });
   }
 
-  async addCalendarEvent(companyId: number, event) {
+  async processEvent(companyId: number, event) {
+    switch (event.action) {
+      case 'insert':
+        return this.insertCalendarEvent(companyId, event.event);
+      case 'update':
+        return this.updateCalendarEvent(companyId, event.event);
+      case 'delete':
+        return this.deleteCalendarEvent(companyId, event.event);
+    }
+  }
+
+  async listEvents(companyId: number, calendarId: string) {
+    const source = await this.prisma.companySource.findFirst({
+      where: {
+        companyId,
+        type: 'gcalendar',
+        link: calendarId,
+        meta: {
+          not: null,
+        },
+      },
+    });
+
+    if (!source) {
+      throw new BadRequestException('Source not found');
+    }
+
+    const auth = this.authFactory(source.meta);
+
+    const response = await google
+      .calendar({ auth, version: 'v3' })
+      .events.list({ calendarId, timeMin: new Date().toISOString() });
+
+    return response.data.items;
+  }
+
+  async insertCalendarEvent(companyId: number, event) {
     const source = await this.prisma.companySource.findFirst({
       where: {
         companyId,
@@ -119,8 +159,49 @@ export class GoogleWorkspaceService {
 
     const auth = this.authFactory(source.meta);
 
-    console.log(event);
     return google.calendar({ auth, version: 'v3' }).events.insert(event);
+  }
+
+  async updateCalendarEvent(companyId: number, event) {
+    const source = await this.prisma.companySource.findFirst({
+      where: {
+        companyId,
+        type: 'gcalendar',
+        link: event.calendarId,
+        meta: {
+          not: null,
+        },
+      },
+    });
+
+    if (!source) {
+      throw new BadRequestException('Source not found');
+    }
+
+    const auth = this.authFactory(source.meta);
+
+    return google.calendar({ auth, version: 'v3' }).events.update(event);
+  }
+
+  async deleteCalendarEvent(companyId: number, event) {
+    const source = await this.prisma.companySource.findFirst({
+      where: {
+        companyId,
+        type: 'gcalendar',
+        link: event.calendarId,
+        meta: {
+          not: null,
+        },
+      },
+    });
+
+    if (!source) {
+      throw new BadRequestException('Source not found');
+    }
+
+    const auth = this.authFactory(source.meta);
+
+    return google.calendar({ auth, version: 'v3' }).events.delete(event);
   }
 
   generateAuthUrl(state: IState, scope: string[]) {

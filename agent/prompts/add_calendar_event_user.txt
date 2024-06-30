@@ -1,16 +1,21 @@
 Calendars:
 {% for c in calendars %}
-id:{{c.id}}, name:{{c.name}}
+calendarId:{{c.id}}, name:{{c.name}}, timeZone:{{c.timeZone}}
+{% endfor %}
+
+Events:
+{% for event in events %}
+eventId:{{event.id}}, summary:{{event.summary}}, description:{{event.description}}
 {% endfor %}
 
 Current context:
 {% for document in context_documents %}
 {% if document.meta['type'] == 'telegram-message' %}
-[{{document.meta['type']}}][{{document.meta['date']}}][{{document.meta['chatTitle']}}][{{document.meta['chatId']}}]{{document.meta['authorUsername']}}({{document.meta['authorFirstName']}}): {{ document.content }}
+messageDate:{{meta['date']}},chatTitle:{{meta['chatTitle']}},chatId:{{meta['chatId']}},telegramUsername:{{meta['authorUsername']}},telegramUserFirstName:{{meta['authorFirstName']}},command:{{ command }}
 {% else %}
 {{ document.content }}
 {% endif %}
 {% endfor %}
 
 Command:
-[{{meta['date']}}][{{meta['chatTitle']}}][{{meta['chatId']}}]{{meta['authorUsername']}}({{meta['authorFirstName']}}): {{ command }}
+messageDate:{{meta['date']}},chatTitle:{{meta['chatTitle']}},chatId:{{meta['chatId']}},telegramUsername:{{meta['authorUsername']}},telegramUserFirstName:{{meta['authorFirstName']}},command:{{ command }}

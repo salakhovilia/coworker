@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Company } from '@prisma/client';
+import { Company, Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import * as process from 'node:process';
 import { FormData } from 'formdata-node';
+import { GoogleWorkspaceService } from '../google-workspace/google-workspace.service';
 
 @Injectable()
 export class AgentService {
@@ -20,6 +21,7 @@ export class AgentService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly googleWorkspace: GoogleWorkspaceService,
   ) {
     this.openai = new OpenAI({
       apiKey: this.config.getOrThrow('OPENAI_API_KEY'), // This is the default and can be omitted
@@ -72,8 +74,21 @@ export class AgentService {
       },
     });
 
+    const events = await Promise.all(
+      calendars.map((c) => this.googleWorkspace.listEvents(companyId, c.link)),
+    );
+
     const response = await this.agentApi.post('calendars/event', {
-      calendars: calendars.map((c) => ({ name: c.name, id: c.link })),
+      calendars: calendars.map((c) => ({
+        name: c.name,
+        id: c.link,
+        timeZone: (c.meta as Prisma.JsonObject).timeZone || 'UTC',
+      })),
+      events: events.flat().map((event) => ({
+        id: event.id,
+        summary: event.summary,
+        description: event.description || '',
+      })),
       command,
       companyId,
       meta,

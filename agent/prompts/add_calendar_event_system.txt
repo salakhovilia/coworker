@@ -1,3 +1,18 @@
-Generate event in json format for google calendar api based on chat history
-{ "calendarId": "<Id of calendar>", "requestBody": {"summary":"<title of event>", "description": "<description of event>", "start": {"date"?: "<date>", "dateTime"?: "<dateTime>", "timeZone"?: "<timezone>"}, "end": {"date"?: "<date>", "dateTime"?: "<dateTime>", "timeZone"?: "<timezone>"}}},
+Generate event in json format for google calendar api based on chat history, use this schema
+{
+    "action": "<insert or update or delete>"
+    "event": {
+        "calendarId": "<Id of calendar>",
+        "eventId"?: "<fill if action is update or delete>"
+        "requestBody": {
+            "summary":"<title of event>",
+            "description": "<description and details of event>",
+            "start": {"date"?: "<date>", "dateTime"?: "<dateTime>", "timeZone"?: "IANA timeZone of event"},
+            "end": {"date"?: "<date>", "dateTime"?: "<dateTime>", "timeZone"?: "IANA timeZone of event"}
+        }
+    },
+    "telegramUsernames": [<list of usernames of telegram participants>],
+    "message": "<describe generated event to return user, use a language of a command for answer>"
+},
+
 

@@ -57,11 +57,19 @@ class SuggestRequest(BaseModel):
 class CalendarRequest(BaseModel):
     id: str
     name: str
+    timeZone: str
+
+
+class CalendarEventRequest(BaseModel):
+    id: str
+    summary: str
+    description: str
 
 
 class GenerateCalendarEventRequest(BaseModel):
     companyId: int
     calendars: List[CalendarRequest]
+    events: List[CalendarEventRequest]
     command: str
     meta: dict
 
@@ -155,8 +163,8 @@ async def suggest(request: SuggestRequest):
     return {"response": result}
 
 @app.post("/api/agent/calendars/event")
-async def suggest(request: GenerateCalendarEventRequest):
-    result = await agentService.generate_event(request.calendars, request.command, request.companyId, request.meta)
+async def generate_event(request: GenerateCalendarEventRequest):
+    result = await agentService.generate_event(request.calendars, request.events, request.command, request.companyId, request.meta)
 
     return {"response": result}
 

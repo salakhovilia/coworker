@@ -36,7 +36,7 @@ export class TelegramService {
     this.bot.start(this.onStart.bind(this));
     this.bot.command('chatId', this.onGetChatId.bind(this));
     this.bot.command('ask', this.onAsk.bind(this));
-    this.bot.command('addEvent', this.onAddEvent.bind(this));
+    this.bot.command('calendar', this.onCalendar.bind(this));
 
     const stage = new Scenes.Stage<CoworkerContext>([
       newCompanyStageFactory(this.prisma, this.agent),
@@ -221,7 +221,7 @@ export class TelegramService {
     ctx.scene.enter(ctx.match[1]);
   }
 
-  async onAddEvent(ctx) {
+  async onCalendar(ctx) {
     const source = await this.prisma.companySource.findFirst({
       where: {
         type: 'chat',
@@ -245,8 +245,8 @@ export class TelegramService {
 
       console.log(event);
 
-      await this.googleWorkspace.addCalendarEvent(source.companyId, event);
-      ctx.reply('Done');
+      await this.googleWorkspace.processEvent(source.companyId, event);
+      ctx.reply(event.message);
     } catch (err) {
       Logger.error(err);
     }
