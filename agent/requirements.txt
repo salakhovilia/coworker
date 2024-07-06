@@ -12,7 +12,7 @@ email_validator==2.2.0
 fastapi==0.111.0
 fastapi-cli==0.0.4
 h11==0.14.0
-haystack-ai==2.1.2
+haystack-ai==2.2.4
 haystack-bm25==1.0.2
 httpcore==1.0.5
 httptools==0.6.1
@@ -20,7 +20,7 @@ httpx==0.27.0
 idna==3.7
 itsdangerous==2.2.0
 Jinja2==3.1.4
-langfuse==2.36.2
+langfuse==2.38.0
 langfuse-haystack==0.2.0
 lazy-imports==0.3.1
 markdown-it-py==3.0.0
@@ -31,7 +31,7 @@ monotonic==1.6
 more-itertools==10.2.0
 networkx==3.3
 numpy==1.26.4
-openai==1.30.5
+openai==1.35.10
 orjson==3.10.5
 packaging==23.2
 pandas==2.2.2

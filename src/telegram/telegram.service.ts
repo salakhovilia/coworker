@@ -60,6 +60,8 @@ export class TelegramService {
 
     this.bot.on(message('text'), this.onText.bind(this));
     this.bot.on(message('document'), this.onDocument.bind(this));
+    this.bot.on(message('voice'), this.onVoice.bind(this));
+    this.bot.on(message('photo'), this.onPhoto.bind(this));
 
     this.bot.launch();
   }
@@ -331,6 +333,34 @@ export class TelegramService {
         console.error(err);
       });
   }
+
+  async onVoice(ctx) {
+    const source = await this.prisma.companySource.findFirst({
+      where: {
+        link: String(ctx.chat.id),
+        type: 'chat',
+      },
+      include: { company: true },
+    });
+
+    if (!source) {
+      return;
+    }
+
+    const link: string = await ctx.telegram.getFileLink(
+      ctx.message.voice.file_id,
+    );
+    const response = await fetch(link, {
+      method: 'GET',
+    });
+    const transcript = await this.agent.parseAudio(response);
+
+    const meta = this.getMetaFromCtx(ctx, 'telegram-message');
+
+    await this.agent.addToContext(transcript, source.companyId, meta);
+  }
+
+  async onPhoto(ctx) {}
 
   async callbackAuthGoogleCalendar(chatId: number, sourceId: number) {
     const calendars = await this.googleWorkspace.listCalendars(sourceId);

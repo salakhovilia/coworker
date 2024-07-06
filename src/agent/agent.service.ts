@@ -7,6 +7,7 @@ import axios from 'axios';
 import * as process from 'node:process';
 import { FormData } from 'formdata-node';
 import { GoogleWorkspaceService } from '../google-workspace/google-workspace.service';
+import { Uploadable } from 'openai/uploads';
 
 @Injectable()
 export class AgentService {
@@ -151,5 +152,15 @@ export class AgentService {
       companyId,
       meta,
     });
+  }
+
+  async parseAudio(file: Uploadable) {
+    const response = await this.openai.audio.transcriptions.create({
+      file,
+      model: 'whisper-1',
+      response_format: 'text',
+    });
+
+    return response as unknown as string;
   }
 }
