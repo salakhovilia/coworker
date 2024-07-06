@@ -1,12 +1,5 @@
 These messages/data may contain the answer to the question:
-{% for document in embedding_documents %}
-{% if document.meta['type'] == 'telegram-message' %}
-messageDate:{{meta['date']}},chatTitle:{{meta['chatTitle']}},chatId:{{meta['chatId']}},telegramUsername:{{meta['authorUsername']}},telegramUserFirstName:{{meta['authorFirstName']}},message:{{ document.content }}
-{% else %}
-{{ document.content }}
-{% endif %}
-{% endfor %}
-{% for document in keyword_documents %}
+{% for document in documents %}
 {% if document.meta['type'] == 'telegram-message' %}
 messageDate:{{meta['date']}},chatTitle:{{meta['chatTitle']}},chatId:{{meta['chatId']}},telegramUsername:{{meta['authorUsername']}},telegramUserFirstName:{{meta['authorFirstName']}},message:{{ document.content }}
 {% else %}

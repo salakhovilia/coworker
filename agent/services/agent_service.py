@@ -29,16 +29,7 @@ class AgentService:
                     ],
                 }
             },
-            "keyword_retriever": {
-                "query": question,
-                "filters": {
-                    "operator": "AND",
-                    "conditions": [
-                        {"field": "meta.companyId", "operator": "==", "value": str(companyId)},
-                        {"field": "content", "operator": "!=", "value": question},
-                    ],
-                }
-            },
+            "ranker": {"query": question},
             "context_retriever": {
                 "filters": {
                     "operator": "AND",
