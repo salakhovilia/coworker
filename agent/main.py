@@ -1,25 +1,38 @@
+import logging
 import mimetypes
 import os
+import sys
+from contextlib import asynccontextmanager
 from tempfile import NamedTemporaryFile
 import urllib.request
 from typing import List
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, HTTPException
-from haystack import Document
-from haystack.document_stores.types import DuplicatePolicy
-from haystack.tracing import tracer
+from fastapi import FastAPI, UploadFile
+from langfuse.llama_index import LlamaIndexCallbackHandler
+from llama_index.core import Document, Settings, SimpleDirectoryReader
+from llama_index.core.callbacks import CallbackManager
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.requests import Request
 
-from pipelines.file_pipeline import FilePipeline, MIMETYPES
-from pipelines.store import DocumentStore
-from pipelines.text_embeder import TextEmbedder
+from pipelines.base.db import pool
+from pipelines.ingestion_pipeline import TextIngestionPipeline
 from services.agent_service import AgentService
+
 
 load_dotenv()
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await pool.open()
+    yield
+    await pool.close()
+    langfuse_callback_handler.flush()
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +42,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+langfuse_callback_handler = LlamaIndexCallbackHandler(
+    public_key=os.environ.get('LANGFUSE_PUBLIC_KEY'),
+    secret_key=os.environ.get('LANGFUSE_SECRET_KEY'),
+    host=os.environ.get('LANGFUSE_HOST')
+)
+Settings.callback_manager = CallbackManager([langfuse_callback_handler])
+
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
 class AddMessageRequest(BaseModel):
     content: str
@@ -76,23 +98,19 @@ class GenerateCalendarEventRequest(BaseModel):
 
 agentService = AgentService()
 
+
 @app.post("/api/agent/text")
 async def add_message(request: AddMessageRequest):
-    embedding = TextEmbedder.run(request.content)
-
-    DocumentStore.write_documents([
-        Document(
-            content=request.content,
-            embedding=embedding['embedding'],
-            meta={**request.meta, 'companyId': request.companyId}
-        )
-    ], policy=DuplicatePolicy.OVERWRITE)
+    await TextIngestionPipeline.arun(documents=[
+        Document(text=request.content, metadata={**request.meta, 'companyId': request.companyId})
+    ])
 
     return {'status': 'ok'}
 
 
 @app.post("/api/agent/files")
 async def add_file(file: UploadFile):
+
     # if file.mimetype not in MIMETYPES:
     #     raise HTTPException(status_code=400, detail="Invalid mimetype")
     #
@@ -120,9 +138,6 @@ async def add_file(file: UploadFile):
 async def add_file_via_link(file: AddFileLinkRequest):
     [mtype, _] = mimetypes.guess_type(file.link)
 
-    if mtype not in MIMETYPES:
-        raise HTTPException(status_code=400, detail="Invalid mimetype")
-
     extension = mimetypes.guess_extension(mtype)
 
     with NamedTemporaryFile(delete=False, dir='uploads', suffix=extension) as temp_file:
@@ -134,12 +149,19 @@ async def add_file_via_link(file: AddFileLinkRequest):
         'companyId': file.companyId
     }
 
-    FilePipeline.run({
-        "file_type_router": {"sources": [file_path]},
-        "pypdf_converter": {"meta": meta},
-        "text_file_converter": {"meta": meta},
-        "markdown_converter": {"meta": meta},
-    })
+    reader = SimpleDirectoryReader(
+        input_files=[file_path],
+    )
+
+    docs = await reader.aload_data()
+
+    for doc in docs:
+        doc.metadata = {
+            **meta,
+            **doc.metadata
+        }
+
+    await TextIngestionPipeline.arun(documents=docs)
 
     os.remove(file_path)
 
@@ -147,13 +169,10 @@ async def add_file_via_link(file: AddFileLinkRequest):
 
 
 @app.post("/api/agent/query")
-async def query(query: QueryRequest):
-    result = await agentService.query(query.question, query.companyId, query.meta)
+async def query(request: Request, query: QueryRequest):
+    result = await agentService.query(request.app.async_pool, query.question, query.companyId, query.meta)
 
-    if not result:
-        return {"response": None}
-
-    return {"response": result['message']}
+    return {"response": result}
 
 
 @app.post("/api/agent/suggest")
@@ -162,13 +181,9 @@ async def suggest(request: SuggestRequest):
 
     return {"response": result}
 
+
 @app.post("/api/agent/calendars/event")
 async def generate_event(request: GenerateCalendarEventRequest):
     result = await agentService.generate_event(request.calendars, request.events, request.command, request.companyId, request.meta)
 
     return {"response": result}
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    tracer.actual_tracer.flush()

@@ -14,7 +14,7 @@ export class GoogleWorkspaceService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
-    private eventEmitter: EventEmitter2,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     this.oAuth2Client = this.authFactory();
   }

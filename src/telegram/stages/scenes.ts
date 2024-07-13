@@ -8,4 +8,6 @@ export enum ScenesIds {
 
   newGoogleCalendarSource = 'NewGoogleCalendarSource',
   finishGoogleCalendarSource = 'FinishGoogleCalendarSource',
+
+  newGithubSource = 'NewGithubSource',
 }

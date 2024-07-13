@@ -13,8 +13,9 @@ import { newGoogleDriveSourceStageFactory } from './stages/new-gdrive-source.sta
 import { GoogleWorkspaceService } from '../google-workspace/google-workspace.service';
 import { newGoogleCalendarSourceStageFactory } from './stages/new-google-calendar-source.stage';
 import { OnEvent } from '@nestjs/event-emitter';
-import { Chat } from 'telegraf/typings/core/types/typegram';
 import * as process from 'node:process';
+import { newGithubSourceStageFactory } from './stages/new-github-source.stage';
+import { GithubService } from '../github/github.service';
 
 @Injectable()
 export class TelegramService {
@@ -26,6 +27,7 @@ export class TelegramService {
 
     private readonly agent: AgentService,
     private readonly googleWorkspace: GoogleWorkspaceService,
+    private readonly githubService: GithubService,
   ) {
     this.bot = new Telegraf<CoworkerContext>(
       this.configService.getOrThrow('TELEGRAM_TOKEN'),
@@ -43,6 +45,7 @@ export class TelegramService {
       newTelegramSourceStageFactory(this.prisma),
       newGoogleDriveSourceStageFactory(this.prisma, this.googleWorkspace),
       newGoogleCalendarSourceStageFactory(this.prisma, this.googleWorkspace),
+      newGithubSourceStageFactory(this.prisma, this.githubService),
     ]);
 
     this.bot.use(stage.middleware());
@@ -125,7 +128,7 @@ export class TelegramService {
       return ctx.reply('Source not found');
     }
 
-    const chat = ctx.chat as Chat.GroupChat;
+    const chat = ctx.chat;
 
     let question = ctx.payload || (ctx.message.text as string);
 
@@ -186,15 +189,25 @@ export class TelegramService {
         title: 'Telegram',
         scene: ScenesIds.newTelegramSource,
       },
-      // {
-      //   title: 'Google Drive',
-      //   scene: ScenesIds.newGoogleDriveSource,
-      // },
-      {
-        title: 'Google Calendar',
-        scene: ScenesIds.newGoogleCalendarSource,
-      },
     ];
+
+    // experimental features
+    if (process.env.NODE_ENV === 'dev' || ctx.session.companyId === 2) {
+      sources.push(
+        {
+          title: 'Google Calendar',
+          scene: ScenesIds.newGoogleCalendarSource,
+        },
+        {
+          title: 'Google Drive',
+          scene: ScenesIds.newGoogleDriveSource,
+        },
+        {
+          title: 'Github',
+          scene: ScenesIds.newGithubSource,
+        },
+      );
+    }
 
     const BUTTONS_PER_ROW = 2;
 
@@ -245,8 +258,6 @@ export class TelegramService {
         this.getMetaFromCtx(ctx, 'telegram-message'),
       );
 
-      console.log(event);
-
       await this.googleWorkspace.processEvent(source.companyId, event);
       ctx.reply(event.message);
     } catch (err) {
@@ -279,22 +290,22 @@ export class TelegramService {
 
     const meta = this.getMetaFromCtx(ctx, 'telegram-message');
 
-    this.agent
-      .suggest(message, source.companyId, meta)
-      .then(async (answer) => {
-        if (!answer) return;
+    if (process.env.NODE_ENV === 'dev' || source.companyId === 2) {
+      this.agent
+        .suggest(message, source.companyId, meta)
+        .then(async (answer) => {
+          if (!answer) return;
 
-        if (process.env.NODE_ENV === 'dev' || source.companyId === 2) {
           await ctx.reply(answer, {
             parse_mode: 'Markdown',
             disable_notification: true,
             reply_parameters: { message_id: ctx.message.message_id },
           });
-        }
-      })
-      .catch((err) => {
-        Logger.error(err);
-      });
+        })
+        .catch((err) => {
+          Logger.error(err);
+        });
+    }
 
     await this.agent.addToContext(message, source.companyId, meta);
   }
@@ -309,12 +320,6 @@ export class TelegramService {
     });
 
     if (!source) {
-      return;
-    }
-
-    const allowedTypes = ['text/markdown', 'application/pdf', 'text/plain'];
-
-    if (!allowedTypes.includes(ctx.message.document.mime_type)) {
       return;
     }
 
@@ -360,7 +365,7 @@ export class TelegramService {
     await this.agent.addToContext(transcript, source.companyId, meta);
   }
 
-  async onPhoto(ctx) {}
+  async onPhoto() {}
 
   async callbackAuthGoogleCalendar(chatId: number, sourceId: number) {
     const calendars = await this.googleWorkspace.listCalendars(sourceId);
@@ -390,6 +395,10 @@ export class TelegramService {
     await ctx.reply(`Your calendar was added`);
   }
 
+  async callbackGithub(chatId: string) {
+    await this.bot.telegram.sendMessage(chatId, 'Github was added');
+  }
+
   private getMetaFromCtx(ctx, type) {
     return {
       date: new Date(ctx.message.date * 1000).toISOString(),
@@ -412,6 +421,10 @@ export class TelegramService {
         this.callbackAuthGoogleCalendar(state.returnTo.chatId, source.id).catch(
           (err) => Logger.error(err),
         );
+        break;
+      case 'github':
+        this.callbackGithub(state.returnTo.chatId);
+        break;
     }
   }
 
