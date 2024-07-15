@@ -17,9 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
 from pipelines.base.db import pool
-from pipelines.ingestion_pipeline import TextIngestionPipeline
+from pipelines.ingestion_pipeline import TextIngestionPipeline, build_code_ingestion_pipeline
 from services.agent_service import AgentService
-
+from utils.ext_to_lang import EXTENSION_TO_LANGUAGE
 
 load_dotenv()
 
@@ -51,6 +51,7 @@ Settings.callback_manager = CallbackManager([langfuse_callback_handler])
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+
 
 class AddMessageRequest(BaseModel):
     content: str
@@ -110,7 +111,6 @@ async def add_message(request: AddMessageRequest):
 
 @app.post("/api/agent/files")
 async def add_file(file: UploadFile):
-
     # if file.mimetype not in MIMETYPES:
     #     raise HTTPException(status_code=400, detail="Invalid mimetype")
     #
@@ -161,7 +161,17 @@ async def add_file_via_link(file: AddFileLinkRequest):
             **doc.metadata
         }
 
-    await TextIngestionPipeline.arun(documents=docs)
+    validated_extension = extension.lstrip('.')
+
+    if validated_extension in EXTENSION_TO_LANGUAGE:
+        try:
+            pipeline = build_code_ingestion_pipeline(EXTENSION_TO_LANGUAGE[validated_extension][0])
+            await pipeline.arun(documents=docs)
+        except Exception as e:
+            logging.warning(e)
+            await TextIngestionPipeline.arun(documents=docs)
+    else:
+        await TextIngestionPipeline.arun(documents=docs)
 
     os.remove(file_path)
 
@@ -170,7 +180,7 @@ async def add_file_via_link(file: AddFileLinkRequest):
 
 @app.post("/api/agent/query")
 async def query(request: Request, query: QueryRequest):
-    result = await agentService.query(request.app.async_pool, query.question, query.companyId, query.meta)
+    result = await agentService.query(query.question, query.companyId, query.meta)
 
     return {"response": result}
 
@@ -184,6 +194,7 @@ async def suggest(request: SuggestRequest):
 
 @app.post("/api/agent/calendars/event")
 async def generate_event(request: GenerateCalendarEventRequest):
-    result = await agentService.generate_event(request.calendars, request.events, request.command, request.companyId, request.meta)
+    result = await agentService.generate_event(request.calendars, request.events, request.command, request.companyId,
+                                               request.meta)
 
     return {"response": result}

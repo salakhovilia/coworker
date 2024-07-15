@@ -34,3 +34,4 @@ LICENSE
 README.md
 *.env
 !sample.env
+*.pem

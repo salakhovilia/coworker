@@ -7,7 +7,7 @@
 # Want to help us make this template better? Share your feedback here: https://forms.gle/ybq9Krt8jtBL3iCk7
 
 ARG PYTHON_VERSION=3.11.0
-FROM python:${PYTHON_VERSION}-slim as base
+FROM python:${PYTHON_VERSION}-alpine as base
 LABEL org.opencontainers.image.source=https://github.com/salakhovilia/coworker
 
 # Prevents Python from writing pyc files.
@@ -19,6 +19,7 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+RUN apk add --no-cache gcc musl-dev	libpq-dev
 # Download dependencies as a separate step to take advantage of Docker's caching.
 # Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.
 # Leverage a bind mount to requirements.txt to avoid having to copy them into
@@ -26,8 +27,6 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
     python -m pip install -r requirements.txt
-
-ENV HAYSTACK_TELEMETRY_ENABLED=0
 
 # Copy the source code into the container.
 COPY . .

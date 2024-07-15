@@ -6,6 +6,8 @@ services:
       - .env
     ports:
       - 3000:3000
+    volumes:
+      - "./github-coworkerai.pem:/usr/src/app/github-coworkerai.pem"
     depends_on:
       db:
         condition: service_healthy
