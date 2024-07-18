@@ -1,4 +1,5 @@
 import os
+import sys
 
 import psycopg
 from llama_index.core import VectorStoreIndex
@@ -10,8 +11,12 @@ from pipelines.base.embedding import embed_model
 
 url = make_url(os.environ.get('DOCUMENT_DATABASE_URL'))
 
-pool = AsyncConnectionPool(os.environ.get('DOCUMENT_DATABASE_URL'), open=False)
 
+def reconnect_failed():
+    sys.exit(1)
+
+
+pool = AsyncConnectionPool(os.environ.get('DOCUMENT_DATABASE_URL'), open=False, reconnect_failed=reconnect_failed)
 
 vector_store = PGVectorStore.from_params(
     database=url.database,

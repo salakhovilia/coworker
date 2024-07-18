@@ -7,9 +7,9 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.query_pipeline import InputComponent, QueryPipeline
 from llama_index.core.response_synthesizers import TreeSummarize
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
+# from llama_index.readers.github import GithubClient, GithubRepositoryReader
 from llama_index.llms.openai import OpenAI
 from llama_index.core.types import BaseModel
-from pydantic import ConfigDict
 from pydantic.v1 import Field
 from pipelines.base.db import index, pool
 from prompts.calendar_prompts import SYSTEM_PROMPT_CALENDAR, USER_PROMPT_CALENDAR
@@ -19,7 +19,7 @@ from prompts.main_prompt import SYSTEM_SUGGESTION_PROMPT, USER_SUGGESTION_PROMPT
 class Query(BaseModel):
     """Data model for an answer."""
 
-    score: int = Field(description='the score from 1 to 10 whether a last message was addressed specifically to you')
+    score: int = Field(description='the score from 1 to 10 whether a last message was addressed specifically to CoWorker')
     relevance: int = Field(description='the score from 1 to 10 the correctness and relevance of the answer')
     message: str
 
@@ -171,6 +171,18 @@ class AgentService:
 
         response = await p.arun(input=await self.format_query(command, meta))
         return response.response
+
+    # async def download_repo(self):
+    #     github_client = GithubClient()
+    #     reader = GithubRepositoryReader(
+    #         github_client=github_client,
+    #         owner='salakhovilia',
+    #         repo='coworker',
+    #         use_parser=False,
+    #         verbose=False,
+    #     )
+    #
+    #     await reader.aload_data()
 
     async def get_last_messages(self, companyId:int, chatId: str):
         async with pool.connection() as conn:
