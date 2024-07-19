@@ -13,14 +13,15 @@ from llama_index.core.types import BaseModel
 from pydantic.v1 import Field
 from pipelines.base.db import index, pool
 from prompts.calendar_prompts import SYSTEM_PROMPT_CALENDAR, USER_PROMPT_CALENDAR
+from prompts.git_prompt import SYSTEM_GIT_DIFF_SUMMARY
 from prompts.main_prompt import SYSTEM_SUGGESTION_PROMPT, USER_SUGGESTION_PROMPT, SYSTEM_PROMPT
 
 
 class Query(BaseModel):
     """Data model for an answer."""
 
-    score: int = Field(description='the score from 1 to 10 whether a last message was addressed specifically to CoWorker')
-    relevance: int = Field(description='the score from 1 to 10 the correctness and relevance of the answer')
+    score: int = Field(description='the score from 1 to 10 CoWorker was mentioned')
+    relevance: int = Field(description='the score from 1 to 10 the correctness, useful and relevance of the answer')
     message: str
 
 
@@ -171,6 +172,13 @@ class AgentService:
 
         response = await p.arun(input=await self.format_query(command, meta))
         return response.response
+
+    async def summaryGitDiff(self, diff: str, companyId):
+        llm = OpenAI(model="gpt-4o-mini", temperature=0.5, system_prompt=SYSTEM_GIT_DIFF_SUMMARY)
+
+        response = await llm.acomplete(diff)
+
+        return response.text
 
     # async def download_repo(self):
     #     github_client = GithubClient()
