@@ -61,6 +61,15 @@ export class AgentService {
     return response.data.response;
   }
 
+  async summaryGitDiff(diff: string, companyId: number) {
+    const response = await this.agentApi.post('/git/diff/summary', {
+      diff,
+      companyId,
+    });
+
+    return response.data.response;
+  }
+
   async generateEvent(command: string, companyId: number, meta) {
     const calendars = await this.prisma.companySource.findMany({
       where: {

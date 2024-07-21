@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AgentService } from '../agent/agent.service';
 
 @Injectable()
 export class GithubService {
@@ -13,6 +14,7 @@ export class GithubService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly agent: AgentService,
     private readonly eventEmitter: EventEmitter2,
   ) {
     const privateKeyPath = this.config.getOrThrow('GITHUB_PRIVATE_KEY_PATH');
@@ -26,6 +28,14 @@ export class GithubService {
       },
       privateKey,
       webhooks: { secret: '1234' },
+    });
+
+    this.app.webhooks.on('pull_request.opened', (event) => {
+      this.createSummaryForPR(event);
+    });
+
+    this.app.webhooks.on('pull_request.edited', (event) => {
+      this.createSummaryForPR(event);
     });
 
     this.app.webhooks.onAny((event) => {
@@ -43,6 +53,44 @@ export class GithubService {
 
   async receiveWebhook(options) {
     return this.app.webhooks.receive(options);
+  }
+
+  async createSummaryForPR(event) {
+    if (!event.payload.pull_request.body?.includes('/summary')) {
+      return;
+    }
+
+    const source = await this.prisma.companySource.findFirst({
+      where: {
+        link: event.payload.repository.full_name,
+      },
+    });
+
+    if (!source) {
+      return;
+    }
+
+    const [owner, repo] = event.payload.repository.full_name.split('/');
+    const diff = await event.octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: event.payload.number,
+      mediaType: {
+        format: 'diff',
+      },
+    });
+
+    const summary = await this.agent.summaryGitDiff(
+      diff.data as unknown as string,
+      source.companyId,
+    );
+
+    await event.octokit.rest.pulls.update({
+      owner,
+      repo,
+      pull_number: event.payload.number,
+      body: summary,
+    });
   }
 
   async postInstall(installationCode: number, state: Record<string, any>) {

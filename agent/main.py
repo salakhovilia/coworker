@@ -77,6 +77,11 @@ class SuggestRequest(BaseModel):
     meta: dict
 
 
+class SummaryGitDiffRequest(BaseModel):
+    diff: str
+    companyId: int
+
+
 class CalendarRequest(BaseModel):
     id: str
     name: str
@@ -188,6 +193,13 @@ async def query(request: Request, query: QueryRequest):
 @app.post("/api/agent/suggest")
 async def suggest(request: SuggestRequest):
     result = await agentService.suggest(request.message, request.companyId, request.meta)
+
+    return {"response": result}
+
+
+@app.post("/api/agent/git/diff/summary")
+async def summary_git_diff(request: SummaryGitDiffRequest):
+    result = await agentService.summaryGitDiff(request.diff, request.companyId)
 
     return {"response": result}
 
