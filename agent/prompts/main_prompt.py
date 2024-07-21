@@ -14,9 +14,26 @@ SYSTEM_PROMPT = ("You are an colleague and you are an expert Q&A system that is 
                  "7. Don't use greetings\n"
                  )
 
+USER_QUERY_PROMPT = (
+    "Context information from multiple sources is below.\n"
+    "---------------------\n"
+    "{context_str}\n"
+    "---------------------\n"
+    "Given the information from multiple sources and not prior knowledge, "
+    "answer the query.\n\n"
+    "Use latest messages for more relevant answer. Latest messages are below.\n"
+    "---------------------\n"
+    "{messages_str}"
+    "---------------------\n\n"
+
+    "Query:\n"
+    "{query_str}\n"
+    "Answer: "
+)
+
 SYSTEM_SUGGESTION_PROMPT = (
     f"{SYSTEM_PROMPT}"
-    "8. Don't retell the last message, if the answer is a retelling you should lower a relevance"
+    "8. Don't retell the last message and context information, if the answer is a retelling you should lower a relevance"
     "Answer in json format, rate the score from 1 to 10 whether a last message was addressed specifically to CoWorker "
     "in the score field"
 )
@@ -33,6 +50,7 @@ USER_SUGGESTION_PROMPT = (
     "{messages_str}"
     "---------------------\n"
     "Use latest messages for more relevant answer.\n\n"
-    "Last message: {query_str}\n"
+    "Last message:\n"
+    "{query_str}\n"
     "Answer: "
 )

@@ -27,7 +27,7 @@ export class GithubService {
         clientSecret: this.config.getOrThrow('GITHUB_SECRET'),
       },
       privateKey,
-      webhooks: { secret: '1234' },
+      webhooks: { secret: this.config.getOrThrow('GITHUB_WEBHOOK_SECRET') },
     });
 
     this.app.webhooks.on('pull_request.opened', (event) => {

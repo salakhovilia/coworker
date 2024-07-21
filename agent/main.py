@@ -24,6 +24,7 @@ from utils.ext_to_lang import EXTENSION_TO_LANGUAGE
 load_dotenv()
 
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await pool.open()
@@ -104,6 +105,10 @@ class GenerateCalendarEventRequest(BaseModel):
 
 agentService = AgentService()
 
+
+@app.post('/api/agent/github/repo')
+async def download_repo():
+    await agentService.download_repo()
 
 @app.post("/api/agent/text")
 async def add_message(request: AddMessageRequest):

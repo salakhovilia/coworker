@@ -10,11 +10,12 @@ from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 # from llama_index.readers.github import GithubClient, GithubRepositoryReader
 from llama_index.llms.openai import OpenAI
 from llama_index.core.types import BaseModel
+# from llama_index.readers.github import GithubRepositoryReader, GithubClient
 from pydantic.v1 import Field
 from pipelines.base.db import index, pool
 from prompts.calendar_prompts import SYSTEM_PROMPT_CALENDAR, USER_PROMPT_CALENDAR
 from prompts.git_prompt import SYSTEM_GIT_DIFF_SUMMARY
-from prompts.main_prompt import SYSTEM_SUGGESTION_PROMPT, USER_SUGGESTION_PROMPT, SYSTEM_PROMPT
+from prompts.main_prompt import SYSTEM_SUGGESTION_PROMPT, USER_SUGGESTION_PROMPT, SYSTEM_PROMPT, USER_QUERY_PROMPT
 
 
 class Query(BaseModel):
@@ -64,7 +65,7 @@ class CalendarEventRoot(BaseModel):
 
 class AgentService:
     async def query(self, question: str, companyId: int, meta: dict):
-        llm = OpenAI(model="gpt-4o", temperature=0.5, system_prompt=SYSTEM_PROMPT)
+        llm = OpenAI(model="gpt-4o", temperature=0.5)
 
         filters = MetadataFilters(
             filters=[
@@ -72,9 +73,14 @@ class AgentService:
             ],
         )
 
-        retriever = index.as_retriever(filters=filters, llm=llm)
+        retriever = index.as_retriever(filters=filters, llm=llm, similarity_top_k=8)
 
-        summarizer = TreeSummarize(llm=llm)
+        prompt_tmpl = ChatPromptTemplate(message_templates=message_templates)
+
+        messages = await self.get_last_messages(companyId, meta['chatId'])
+        prompt_tmpl = prompt_tmpl.partial_format(messages_str=await self.format_messages(messages))
+
+        summarizer = TreeSummarize(llm=llm, summary_template=prompt_tmpl)
         p = QueryPipeline(verbose=False)
         p.add_modules(
             {
@@ -100,7 +106,12 @@ class AgentService:
             ],
         )
 
-        retriever = index.as_retriever(filters=filters, llm=llm)
+        retriever = index.as_retriever(filters=filters, llm=llm, similarity_top_k=8)
+
+        message_templates = [
+            ChatMessage(content=SYSTEM_PROMPT, role=MessageRole.SYSTEM),
+            ChatMessage(content=USER_QUERY_PROMPT, role=MessageRole.USER)
+        ]
 
         message_templates = [
             ChatMessage(content=SYSTEM_SUGGESTION_PROMPT, role=MessageRole.SYSTEM),
@@ -141,7 +152,7 @@ class AgentService:
             ],
         )
 
-        retriever = index.as_retriever(filters=filters, llm=llm)
+        retriever = index.as_retriever(filters=filters, llm=llm, similarity_top_k=8)
 
         message_templates = [
             ChatMessage(content=SYSTEM_PROMPT_CALENDAR, role=MessageRole.SYSTEM),
@@ -181,7 +192,7 @@ class AgentService:
         return response.text
 
     # async def download_repo(self):
-    #     github_client = GithubClient()
+    #     github_client = GithubClient(github_token='52575622')
     #     reader = GithubRepositoryReader(
     #         github_client=github_client,
     #         owner='salakhovilia',
@@ -190,7 +201,8 @@ class AgentService:
     #         verbose=False,
     #     )
     #
-    #     await reader.aload_data()
+    #     docs = await reader.aload_data(branch='master')
+    #     print(docs)
 
     async def get_last_messages(self, companyId:int, chatId: str):
         async with pool.connection() as conn:
