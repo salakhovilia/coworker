@@ -75,6 +75,11 @@ class AgentService:
 
         retriever = index.as_retriever(filters=filters, llm=llm, similarity_top_k=8)
 
+        message_templates = [
+            ChatMessage(content=SYSTEM_PROMPT, role=MessageRole.SYSTEM),
+            ChatMessage(content=USER_QUERY_PROMPT, role=MessageRole.USER)
+        ]
+
         prompt_tmpl = ChatPromptTemplate(message_templates=message_templates)
 
         messages = await self.get_last_messages(companyId, meta['chatId'])
@@ -107,11 +112,6 @@ class AgentService:
         )
 
         retriever = index.as_retriever(filters=filters, llm=llm, similarity_top_k=8)
-
-        message_templates = [
-            ChatMessage(content=SYSTEM_PROMPT, role=MessageRole.SYSTEM),
-            ChatMessage(content=USER_QUERY_PROMPT, role=MessageRole.USER)
-        ]
 
         message_templates = [
             ChatMessage(content=SYSTEM_SUGGESTION_PROMPT, role=MessageRole.SYSTEM),
