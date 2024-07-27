@@ -82,7 +82,7 @@ class AgentService:
 
         prompt_tmpl = ChatPromptTemplate(message_templates=message_templates)
 
-        messages = await self.get_last_messages(companyId, meta['chatId'])
+        messages = await self.get_last_messages(companyId, meta.get('chatId'))
         prompt_tmpl = prompt_tmpl.partial_format(messages_str=await self.format_messages(messages))
 
         summarizer = TreeSummarize(llm=llm, summary_template=prompt_tmpl)
@@ -120,7 +120,7 @@ class AgentService:
 
         prompt_tmpl = ChatPromptTemplate(message_templates=message_templates)
 
-        messages = await self.get_last_messages(companyId, meta['chatId'])
+        messages = await self.get_last_messages(companyId, meta.get('chatId'))
         prompt_tmpl = prompt_tmpl.partial_format(messages_str=await self.format_messages(messages))
 
         summarizer = TreeSummarize(llm=llm, summary_template=prompt_tmpl, output_cls=Query)
@@ -208,7 +208,7 @@ class AgentService:
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT text, metadata_ FROM data_documents "
-                                     "WHERE metadata_->>'companyId'=%s and metadata_->>'type'='telegram-message'"
+                                     "WHERE metadata_->>'companyId'=%s and metadata_->>'type'='message'"
                                      " and metadata_->>'chatId'=%s "
                                      "ORDER BY metadata_->>'date' DESC "
                                      "LIMIT 5", [str(companyId), str(chatId)])

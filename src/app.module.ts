@@ -8,6 +8,7 @@ import { PrismaService } from './prisma/prisma.service';
 import { GoogleWorkspaceService } from './google-workspace/google-workspace.service';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { GithubService } from './github/github.service';
+import { TelegramAdminService } from './telegram/telegram-admin.service';
 
 let configPath = '.env';
 if (process.env.NODE_ENV !== 'production') {
@@ -28,6 +29,7 @@ if (process.env.NODE_ENV !== 'production') {
     PrismaService,
     AgentService,
     TelegramService,
+    TelegramAdminService,
     GoogleWorkspaceService,
     GithubService,
   ],

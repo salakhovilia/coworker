@@ -30,11 +30,13 @@ export class AgentService {
   }
 
   async addToContext(
+    id: string | number,
     content: string,
     companyId: number,
     meta: Record<string, any>,
   ) {
     await this.agentApi.post('/text', {
+      id,
       content,
       companyId,
       meta,
