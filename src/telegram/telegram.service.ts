@@ -189,24 +189,23 @@ export class TelegramService {
         title: 'Telegram',
         scene: ScenesIds.newTelegramSource,
       },
+      {
+        title: 'Google Calendar',
+        scene: ScenesIds.newGoogleCalendarSource,
+      },
+      {
+        title: 'Google Drive',
+        scene: ScenesIds.newGoogleDriveSource,
+      },
+      {
+        title: 'Github',
+        scene: ScenesIds.newGithubSource,
+      },
     ];
 
     // experimental features
     if (process.env.NODE_ENV === 'dev' || ctx.session.companyId === 2) {
-      sources.push(
-        {
-          title: 'Google Calendar',
-          scene: ScenesIds.newGoogleCalendarSource,
-        },
-        {
-          title: 'Google Drive',
-          scene: ScenesIds.newGoogleDriveSource,
-        },
-        {
-          title: 'Github',
-          scene: ScenesIds.newGithubSource,
-        },
-      );
+      // sources.push();
     }
 
     const BUTTONS_PER_ROW = 2;
