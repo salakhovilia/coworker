@@ -1,3 +1,4 @@
+import json
 import logging
 import mimetypes
 import os
@@ -5,21 +6,21 @@ import sys
 from contextlib import asynccontextmanager
 from tempfile import NamedTemporaryFile
 import urllib.request
-from typing import List
+from typing import List, Annotated
 
+import aiofiles
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, UploadFile, Form
 from langfuse.llama_index import LlamaIndexCallbackHandler
-from llama_index.core import Document, Settings, SimpleDirectoryReader
+from llama_index.core import Document, Settings
 from llama_index.core.callbacks import CallbackManager
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
 from pipelines.base.db import pool
-from pipelines.ingestion_pipeline import TextIngestionPipeline, build_code_ingestion_pipeline
+from pipelines.ingestion_pipeline import TextIngestionPipeline
 from services.agent_service import AgentService
-from utils.ext_to_lang import EXTENSION_TO_LANGUAGE
 
 load_dotenv()
 
@@ -55,6 +56,7 @@ logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
 
 class AddMessageRequest(BaseModel):
+    id: str
     content: str
     companyId: int
     meta: dict
@@ -110,38 +112,38 @@ agentService = AgentService()
 async def download_repo():
     await agentService.download_repo()
 
+
 @app.post("/api/agent/text")
 async def add_message(request: AddMessageRequest):
     await TextIngestionPipeline.arun(documents=[
-        Document(text=request.content, metadata={**request.meta, 'companyId': request.companyId})
+        Document(id=request.id, text=request.content, metadata={**request.meta, 'companyId': request.companyId})
     ])
 
     return {'status': 'ok'}
 
 
 @app.post("/api/agent/files")
-async def add_file(file: UploadFile):
-    # if file.mimetype not in MIMETYPES:
-    #     raise HTTPException(status_code=400, detail="Invalid mimetype")
-    #
-    # extension = mimetypes.guess_extension(file.mimetype)
-    #
-    # with NamedTemporaryFile(delete=False, dir='uploads', suffix=extension) as temp_file:
-    #     file.save(temp_file.name)
-    #     file_path = temp_file.name
+async def add_file(id: Annotated[str, Form()], file: UploadFile, companyId: Annotated[str, Form()], meta: Annotated[str, Form()]):
+    extension = mimetypes.guess_extension(file.content_type)
 
-    meta = {}
-    # for arg in request.args:
-    #     meta[arg] = int(request.args[arg]) if request.args[arg].isdecimal() else request.args[arg]
-    #
-    # FilePipeline.run({
-    #     "file_type_router": {"sources": [file_path]},
-    #     "pypdf_converter": {"meta": meta},
-    #     "text_file_converter": {"meta": meta},
-    #     "markdown_converter": {"meta": meta},
-    # })
-    #
-    # os.remove(file_path)
+    file_path = ''
+    with NamedTemporaryFile(delete=False, dir='uploads', suffix=extension) as temp_file:
+        file_path = temp_file.name
+        async with aiofiles.open(file_path, 'wb') as f:
+            while content := await file.read(1000000):
+                await f.write(content)
+            await f.flush()
+
+    meta = json.loads(meta)
+
+    try:
+        await agentService.process_file(id, file_path, companyId, meta)
+    except Exception as e:
+        raise e
+    finally:
+        os.remove(file_path)
+
+    return {'status': 'ok'}
 
 
 @app.post("/api/agent/files/link")
@@ -154,34 +156,7 @@ async def add_file_via_link(file: AddFileLinkRequest):
         urllib.request.urlretrieve(file.link, temp_file.name)
         file_path = temp_file.name
 
-    meta = {
-        **file.meta,
-        'companyId': file.companyId
-    }
-
-    reader = SimpleDirectoryReader(
-        input_files=[file_path],
-    )
-
-    docs = await reader.aload_data()
-
-    for doc in docs:
-        doc.metadata = {
-            **meta,
-            **doc.metadata
-        }
-
-    validated_extension = extension.lstrip('.')
-
-    if validated_extension in EXTENSION_TO_LANGUAGE:
-        try:
-            pipeline = build_code_ingestion_pipeline(EXTENSION_TO_LANGUAGE[validated_extension][0])
-            await pipeline.arun(documents=docs)
-        except Exception as e:
-            logging.warning(e)
-            await TextIngestionPipeline.arun(documents=docs)
-    else:
-        await TextIngestionPipeline.arun(documents=docs)
+    # await agentService.process_file()
 
     os.remove(file_path)
 

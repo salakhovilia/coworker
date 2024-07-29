@@ -1,8 +1,9 @@
 import datetime
+import logging
 from enum import Enum
 from typing import Optional, List, Any
 
-from llama_index.core import ChatPromptTemplate
+from llama_index.core import ChatPromptTemplate, SimpleDirectoryReader
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.query_pipeline import InputComponent, QueryPipeline
 from llama_index.core.response_synthesizers import TreeSummarize
@@ -10,12 +11,15 @@ from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 # from llama_index.readers.github import GithubClient, GithubRepositoryReader
 from llama_index.llms.openai import OpenAI
 from llama_index.core.types import BaseModel
+from llama_index.readers.file import VideoAudioReader
 # from llama_index.readers.github import GithubRepositoryReader, GithubClient
 from pydantic.v1 import Field
 from pipelines.base.db import index, pool
+from pipelines.ingestion_pipeline import TextIngestionPipeline, build_code_ingestion_pipeline
 from prompts.calendar_prompts import SYSTEM_PROMPT_CALENDAR, USER_PROMPT_CALENDAR
 from prompts.git_prompt import SYSTEM_GIT_DIFF_SUMMARY
 from prompts.main_prompt import SYSTEM_SUGGESTION_PROMPT, USER_SUGGESTION_PROMPT, SYSTEM_PROMPT, USER_QUERY_PROMPT
+from utils.ext_to_lang import EXTENSION_TO_LANGUAGE
 
 
 class Query(BaseModel):
@@ -64,6 +68,36 @@ class CalendarEventRoot(BaseModel):
 
 
 class AgentService:
+
+    async def process_file(self, id, file_path, companyId: str, meta: dict):
+        reader = SimpleDirectoryReader(
+            input_files=[file_path],
+            file_extractor={
+                '.m4a': VideoAudioReader()
+            }
+        )
+
+        [doc] = await reader.aload_data(show_progress=True)
+
+        doc.doc_id = id
+        doc.metadata = {
+            **meta,
+            'companyId': companyId,
+            **doc.metadata
+        }
+
+        extension = file_path.split('.')[-1]
+
+        if extension in EXTENSION_TO_LANGUAGE:
+            try:
+                pipeline = build_code_ingestion_pipeline(EXTENSION_TO_LANGUAGE[extension][0])
+                await pipeline.arun(documents=[doc])
+            except Exception as e:
+                logging.warning(e)
+                await TextIngestionPipeline.arun(documents=[doc])
+        else:
+            await TextIngestionPipeline.arun(documents=[doc])
+
     async def query(self, question: str, companyId: int, meta: dict):
         llm = OpenAI(model="gpt-4o", temperature=0.5)
 

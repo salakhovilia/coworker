@@ -10,6 +10,7 @@ import { NewMessage } from 'telegram/events';
 import { StringSession } from 'telegram/sessions';
 import { LogLevel } from 'telegram/extensions/Logger';
 import { toFile } from 'openai';
+import { CompanySource } from '@prisma/client';
 import { Readable } from 'stream';
 
 class GramLogger extends TGLogger {
@@ -98,11 +99,30 @@ export class TelegramService {
   }
 
   async onMessage(message: Api.Message) {
-    console.log(message);
+    const source = await this.prisma.companySource.findFirst({
+      where: {
+        type: 'chat',
+        link: String(message.chatId),
+      },
+    });
+
+    if (!source) {
+      return;
+    }
+
+    if (message.voice) {
+      await this.onVoice(message, source);
+    }
+
+    if (message.file || message.audio || message.video) {
+      await this.onFile(message, source);
+    }
 
     if (message.text) {
-      await this.onText(message);
+      await this.onText(message, source);
     }
+
+    await message.markAsRead();
   }
 
   async onGetChatId(message: Api.Message) {
@@ -180,18 +200,7 @@ export class TelegramService {
     }
   }
 
-  async onText(message: Api.Message) {
-    const source = await this.prisma.companySource.findFirst({
-      where: {
-        type: 'chat',
-        link: String(message.chatId),
-      },
-    });
-
-    if (!source) {
-      return;
-    }
-
+  async onText(message: Api.Message, source: CompanySource) {
     const text = message.text;
 
     let replyMessage: Api.Message | undefined;
@@ -217,7 +226,7 @@ export class TelegramService {
 
           await message.reply({
             message: answer,
-            parseMode: 'Markdown',
+            parseMode: 'markdown',
             silent: true,
           });
         })
@@ -226,73 +235,86 @@ export class TelegramService {
         });
     }
 
-    await this.agent.addToContext(message.id, text, source.companyId, meta);
+    await this.agent.addToContext(
+      this.getIdFromMessage(source.companyId, message),
+      text,
+      source.companyId,
+      meta,
+    );
   }
 
-  async onDocument(ctx) {
-    const source = await this.prisma.companySource.findFirst({
-      where: {
-        link: String(ctx.chat.id),
-        type: 'chat',
-      },
-      include: { company: true },
+  async onFile(message: Api.Message, source: CompanySource) {
+    const file = this.client.iterDownload({
+      file: new Api.InputDocumentFileLocation({
+        id: message.document.id,
+        accessHash: message.document.accessHash,
+        fileReference: message.document.fileReference,
+        thumbSize: '0',
+      }),
+      requestSize: 1000000,
     });
 
-    if (!source) {
-      return;
-    }
+    const stream = Readable.from(file);
+    let downloadedSize = 0;
+    stream.on('data', (chunk) => {
+      downloadedSize += chunk.length;
 
-    const link = await ctx.telegram.getFileLink(ctx.message.document.file_id);
+      Logger.log(
+        `File ${message.document.id} downloaded: ${((downloadedSize / message.document.size.toJSNumber()) * 100).toPrecision(2)}%`,
+      );
+    });
 
     this.agent
-      .uploadFileViaLink(source.company.id, link, {
-        date: new Date(ctx.message.date * 1000).toISOString(),
-        type: 'telegram-file',
-        chatId: ctx.chat.id,
-        chatTitle: ctx.chat.title,
-        authorUsername: ctx.message.from.username,
-        authorFirstName: ctx.message.from.first_name,
+      .uploadFile(
+        this.getIdFromMessage(source.companyId, message),
+        source.companyId,
+        stream,
+        message.document.mimeType,
+        await this.getMetaFromCtx(message, 'telegram', 'file'),
+      )
+      .then(async () => {
+        await this.client.invoke(
+          new Api.messages.SendReaction({
+            msgId: message.id,
+            peer: await message.getChat(),
+            reaction: [new Api.ReactionEmoji({ emoticon: '✍️' })],
+          }),
+        );
       })
       .catch((err) => {
-        console.error(err);
+        Logger.error(err.response?.data || err.response || err.toString());
       });
   }
 
-  async onVoice(message: Api.Message) {
-    const source = await this.prisma.companySource.findFirst({
-      where: {
-        link: String(message.chatId),
-        type: 'chat',
-      },
-      include: { company: true },
-    });
-
-    if (!source) {
-      return;
-    }
-
+  async onVoice(message: Api.Message, source: CompanySource) {
     const voice = this.client.iterDownload({
-      file: new Api.InputPhotoFileLocation({
+      file: new Api.InputDocumentFileLocation({
         id: message.voice.id,
         accessHash: message.voice.accessHash,
         fileReference: message.voice.fileReference,
-        thumbSize: 'm',
+        thumbSize: '0',
       }),
-      requestSize: message.voice.size.toJSNumber(),
+      requestSize: 1000000,
     });
 
     const transcript = await this.agent.parseAudio(
-      await toFile(Readable.from(voice)),
+      await toFile(Readable.from(voice), 'voice', {
+        type: message.voice.mimeType,
+      }),
     );
 
-    const meta = this.getMetaFromCtx(message, 'telegram', 'message');
+    const meta = await this.getMetaFromCtx(message, 'telegram', 'message');
 
     await this.agent.addToContext(
-      message.id,
+      this.getIdFromMessage(source.companyId, message),
       transcript,
       source.companyId,
       meta,
     );
+  }
+
+  private getIdFromMessage(companyId: number, message: Api.Message) {
+    return `${companyId}-${message.chatId}-${message.id}`;
   }
 
   private async getMetaFromCtx(
