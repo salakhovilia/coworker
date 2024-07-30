@@ -26,6 +26,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
     container_name: agent
     volumes:
       - uploads:/app/uploads
@@ -42,6 +43,14 @@ services:
     environment:
       - TELEMETRY_ENABLED=false
       - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
+
+  redis:
+    image: redis:7.2-alpine
+    restart: always
+    ports:
+      - 6379:6379
+    volumes:
+      - redis-data:/data
 
   db:
     platform: linux/amd64

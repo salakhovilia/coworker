@@ -23,6 +23,8 @@ services:
       db:
         condition: service_healthy
 
+
+
   langfuse-server:
     restart: unless-stopped
     image: langfuse/langfuse:2

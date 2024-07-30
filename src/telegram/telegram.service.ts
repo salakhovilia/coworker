@@ -12,6 +12,8 @@ import { LogLevel } from 'telegram/extensions/Logger';
 import { toFile } from 'openai';
 import { CompanySource } from '@prisma/client';
 import { Readable } from 'stream';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 
 class GramLogger extends TGLogger {
   static logger = new Logger('GramJS');
@@ -50,6 +52,8 @@ export class TelegramService {
 
     private readonly agent: AgentService,
     private readonly googleWorkspace: GoogleWorkspaceService,
+
+    @InjectQueue('files') private filesQueue: Queue,
   ) {
     this.client = new TelegramClient(
       new StringSession(this.configService.get('TELEGRAM_SESSION')),
@@ -73,7 +77,18 @@ export class TelegramService {
         return;
       }
 
-      this.onMessage(event.message).catch((err) => {
+      const source = await this.prisma.companySource.findFirst({
+        where: {
+          type: 'chat',
+          link: String(event.message.chatId),
+        },
+      });
+
+      if (!source) {
+        return;
+      }
+
+      this.onMessage(event.message, source).catch((err) => {
         Logger.error(err);
       });
     }, new NewMessage({}));
@@ -81,6 +96,7 @@ export class TelegramService {
     this.command('chatId', this.onGetChatId.bind(this));
     this.command('ask', this.onAsk.bind(this));
     this.command('calendar', this.onCalendar.bind(this));
+    this.command('parse', this.onParse.bind(this));
   }
 
   command(name: string, handler: (message: Api.Message) => void) {
@@ -98,11 +114,19 @@ export class TelegramService {
     return false;
   }
 
-  async onMessage(message: Api.Message) {
+  async getChat(chatId: string) {
+    return this.client.getInputEntity(chatId);
+  }
+
+  async onParse(message: Api.Message) {
+    await this.parseHistory(message.chatId.toString());
+  }
+
+  async parseHistory(chatId: string) {
     const source = await this.prisma.companySource.findFirst({
       where: {
         type: 'chat',
-        link: String(message.chatId),
+        link: String(chatId),
       },
     });
 
@@ -110,16 +134,37 @@ export class TelegramService {
       return;
     }
 
+    let lastMessage: Api.Message;
+
+    const limit = 500;
+    while (lastMessage?.id != 0) {
+      for await (const message of this.client.iterMessages(chatId, {
+        minId: 0,
+        limit,
+        offsetId: lastMessage?.id,
+      })) {
+        await this.onMessage(message, source, false);
+
+        if (lastMessage?.id < limit) {
+          break;
+        }
+
+        lastMessage = message;
+      }
+    }
+  }
+
+  async onMessage(message: Api.Message, source: CompanySource, answer = true) {
     if (message.voice) {
       await this.onVoice(message, source);
     }
 
     if (message.file || message.audio || message.video) {
-      await this.onFile(message, source);
+      await this.onFile(message, source, answer);
     }
 
     if (message.text) {
-      await this.onText(message, source);
+      await this.onText(message, source, answer);
     }
 
     await message.markAsRead();
@@ -200,7 +245,7 @@ export class TelegramService {
     }
   }
 
-  async onText(message: Api.Message, source: CompanySource) {
+  async onText(message: Api.Message, source: CompanySource, answer = true) {
     const text = message.text;
 
     let replyMessage: Api.Message | undefined;
@@ -209,7 +254,7 @@ export class TelegramService {
     }
 
     if (
-      text.includes(this.configService.get('TELEGRAM_USERNAME')) ||
+      (answer && text.includes(this.configService.get('TELEGRAM_USERNAME'))) ||
       (replyMessage && replyMessage.senderId === this.me.id)
     ) {
       await this.onAsk(message, replyMessage);
@@ -218,7 +263,7 @@ export class TelegramService {
 
     const meta = await this.getMetaFromCtx(message, 'telegram', 'message');
 
-    if (process.env.NODE_ENV === 'dev' || source.companyId === 2) {
+    if (answer && (process.env.NODE_ENV === 'dev' || source.companyId === 2)) {
       this.agent
         .suggest(text, source.companyId, meta)
         .then(async (answer) => {
@@ -243,8 +288,23 @@ export class TelegramService {
     );
   }
 
-  async onFile(message: Api.Message, source: CompanySource) {
-    const file = this.client.iterDownload({
+  async onFile(message: Api.Message, source: CompanySource, answer = true) {
+    await this.filesQueue.add({
+      companyId: source.companyId,
+      sourceId: source.id,
+      source: 'telegram',
+      chatId: message.chatId,
+      messageId: message.id,
+      answer,
+    });
+  }
+
+  async downloadAndProcessFile(file) {
+    const [message] = await this.client.getMessages(file.chatId, {
+      ids: file.messageId,
+    });
+
+    const fileIter = this.client.iterDownload({
       file: new Api.InputDocumentFileLocation({
         id: message.document.id,
         accessHash: message.document.accessHash,
@@ -254,7 +314,7 @@ export class TelegramService {
       requestSize: 1000000,
     });
 
-    const stream = Readable.from(file);
+    const stream = Readable.from(fileIter);
     let downloadedSize = 0;
     stream.on('data', (chunk) => {
       downloadedSize += chunk.length;
@@ -264,26 +324,23 @@ export class TelegramService {
       );
     });
 
-    this.agent
-      .uploadFile(
-        this.getIdFromMessage(source.companyId, message),
-        source.companyId,
-        stream,
-        message.document.mimeType,
-        await this.getMetaFromCtx(message, 'telegram', 'file'),
-      )
-      .then(async () => {
-        await this.client.invoke(
-          new Api.messages.SendReaction({
-            msgId: message.id,
-            peer: await message.getChat(),
-            reaction: [new Api.ReactionEmoji({ emoticon: '✍️' })],
-          }),
-        );
-      })
-      .catch((err) => {
-        Logger.error(err.response?.data || err.response || err.toString());
-      });
+    await this.agent.uploadFile(
+      this.getIdFromMessage(file.companyId, message),
+      file.companyId,
+      stream,
+      message.document.mimeType,
+      await this.getMetaFromCtx(message, 'telegram', 'file'),
+    );
+
+    if (file.answer) {
+      await this.client.invoke(
+        new Api.messages.SendReaction({
+          msgId: message.id,
+          peer: await message.getChat(),
+          reaction: [new Api.ReactionEmoji({ emoticon: '✍️' })],
+        }),
+      );
+    }
   }
 
   async onVoice(message: Api.Message, source: CompanySource) {

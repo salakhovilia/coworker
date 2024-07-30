@@ -1,5 +1,5 @@
 import tree_sitter_languages
-from llama_index.core.ingestion import IngestionPipeline, DocstoreStrategy
+from llama_index.core.ingestion import IngestionPipeline, DocstoreStrategy, IngestionCache
 from llama_index.core.node_parser import SemanticSplitterNodeParser, CodeSplitter, SentenceSplitter
 
 from pipelines.base.db import vector_store
@@ -7,7 +7,7 @@ from pipelines.base.embedding import embed_model
 
 sentence_splitter = SentenceSplitter()
 splitter = SemanticSplitterNodeParser(
-    buffer_size=1, breakpoint_percentile_threshold=95, embed_model=embed_model,
+    buffer_size=1, breakpoint_percentile_threshold=98, embed_model=embed_model, include_metadata=False,
     sentence_splitter=lambda text: sentence_splitter.split_text(text)
 )
 

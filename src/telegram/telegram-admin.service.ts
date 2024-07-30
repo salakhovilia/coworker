@@ -15,6 +15,9 @@ import { OnEvent } from '@nestjs/event-emitter';
 import * as process from 'node:process';
 import { newGithubSourceStageFactory } from './stages/new-github-source.stage';
 import { GithubService } from '../github/github.service';
+import { TelegramService } from './telegram.service';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 
 @Injectable()
 export class TelegramAdminService {
@@ -27,6 +30,9 @@ export class TelegramAdminService {
     private readonly agent: AgentService,
     private readonly googleWorkspace: GoogleWorkspaceService,
     private readonly githubService: GithubService,
+    private readonly telegramService: TelegramService,
+
+    @InjectQueue('sources') private sourcesQueue: Queue,
   ) {
     this.bot = new Telegraf<CoworkerContext>(
       this.configService.getOrThrow('TELEGRAM_TOKEN'),
@@ -39,7 +45,11 @@ export class TelegramAdminService {
 
     const stage = new Scenes.Stage<CoworkerContext>([
       newCompanyStageFactory(this.prisma, this.agent),
-      newTelegramSourceStageFactory(this.prisma),
+      newTelegramSourceStageFactory(
+        this.prisma,
+        this.telegramService,
+        this.sourcesQueue,
+      ),
       newGoogleDriveSourceStageFactory(this.prisma, this.googleWorkspace),
       newGoogleCalendarSourceStageFactory(this.prisma, this.googleWorkspace),
       newGithubSourceStageFactory(this.prisma, this.githubService),

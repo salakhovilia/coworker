@@ -9,6 +9,8 @@ import { GoogleWorkspaceService } from './google-workspace/google-workspace.serv
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { GithubService } from './github/github.service';
 import { TelegramAdminService } from './telegram/telegram-admin.service';
+import { BullModule } from '@nestjs/bull';
+import { FilesQueue } from './queues/files.queue';
 
 let configPath = '.env';
 if (process.env.NODE_ENV !== 'production') {
@@ -22,6 +24,20 @@ if (process.env.NODE_ENV !== 'production') {
       envFilePath: configPath,
     }),
     EventEmitterModule.forRoot(),
+    BullModule.forRoot({
+      redis: {
+        host: 'localhost',
+        port: 6379,
+      },
+    }),
+    BullModule.registerQueue(
+      {
+        name: 'sources',
+      },
+      {
+        name: 'files',
+      },
+    ),
   ],
   controllers: [AppController],
   providers: [
@@ -32,6 +48,7 @@ if (process.env.NODE_ENV !== 'production') {
     TelegramAdminService,
     GoogleWorkspaceService,
     GithubService,
+    FilesQueue,
   ],
 })
 export class AppModule {}
