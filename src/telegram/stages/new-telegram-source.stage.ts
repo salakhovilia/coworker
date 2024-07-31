@@ -43,10 +43,17 @@ export function newTelegramSourceStageFactory(
           type: 'chat',
         },
       })
-      .then((source) => {
-        queue.add({
-          sourceId: source.id,
-        });
+      .then(() => {
+        queue.add(
+          {
+            source: 'telegram',
+            type: 'chat',
+            chatId,
+          },
+          {
+            priority: 2,
+          },
+        );
         ctx.reply('Done');
       })
       .catch((err) => {

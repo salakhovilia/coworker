@@ -18,6 +18,7 @@ import { GithubService } from '../github/github.service';
 import { TelegramService } from './telegram.service';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
+import { Queues } from '../queues/queues';
 
 @Injectable()
 export class TelegramAdminService {
@@ -32,7 +33,7 @@ export class TelegramAdminService {
     private readonly githubService: GithubService,
     private readonly telegramService: TelegramService,
 
-    @InjectQueue('sources') private sourcesQueue: Queue,
+    @InjectQueue(Queues.Documents) private documentsQueue: Queue,
   ) {
     this.bot = new Telegraf<CoworkerContext>(
       this.configService.getOrThrow('TELEGRAM_TOKEN'),
@@ -48,7 +49,7 @@ export class TelegramAdminService {
       newTelegramSourceStageFactory(
         this.prisma,
         this.telegramService,
-        this.sourcesQueue,
+        this.documentsQueue,
       ),
       newGoogleDriveSourceStageFactory(this.prisma, this.googleWorkspace),
       newGoogleCalendarSourceStageFactory(this.prisma, this.googleWorkspace),

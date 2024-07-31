@@ -10,7 +10,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { GithubService } from './github/github.service';
 import { TelegramAdminService } from './telegram/telegram-admin.service';
 import { BullModule } from '@nestjs/bull';
-import { FilesQueue } from './queues/files.queue';
+import { DocumentsQueue } from './queues/documents.queue';
+import { Queues } from './queues/queues';
 
 let configPath = '.env';
 if (process.env.NODE_ENV !== 'production') {
@@ -30,14 +31,9 @@ if (process.env.NODE_ENV !== 'production') {
         port: 6379,
       },
     }),
-    BullModule.registerQueue(
-      {
-        name: 'sources',
-      },
-      {
-        name: 'files',
-      },
-    ),
+    BullModule.registerQueue({
+      name: Queues.Documents,
+    }),
   ],
   controllers: [AppController],
   providers: [
@@ -48,7 +44,7 @@ if (process.env.NODE_ENV !== 'production') {
     TelegramAdminService,
     GoogleWorkspaceService,
     GithubService,
-    FilesQueue,
+    DocumentsQueue,
   ],
 })
 export class AppModule {}

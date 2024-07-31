@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
-import { AgentService } from '../agent/agent.service';
+import { AgentService, IDocument } from '../agent/agent.service';
 import { GoogleWorkspaceService } from '../google-workspace/google-workspace.service';
 import * as process from 'node:process';
 import { TelegramClient, Logger as TGLogger, Api } from 'telegram';
@@ -14,6 +14,7 @@ import { CompanySource } from '@prisma/client';
 import { Readable } from 'stream';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
+import { Queues } from '../queues/queues';
 
 class GramLogger extends TGLogger {
   static logger = new Logger('GramJS');
@@ -53,7 +54,7 @@ export class TelegramService {
     private readonly agent: AgentService,
     private readonly googleWorkspace: GoogleWorkspaceService,
 
-    @InjectQueue('files') private filesQueue: Queue,
+    @InjectQueue(Queues.Documents) private documentsQueue: Queue,
   ) {
     this.client = new TelegramClient(
       new StringSession(this.configService.get('TELEGRAM_SESSION')),
@@ -119,38 +120,74 @@ export class TelegramService {
   }
 
   async onParse(message: Api.Message) {
-    await this.parseHistory(message.chatId.toString());
+    await this.parseHistory({ chatId: message.chatId.toString() });
   }
 
-  async parseHistory(chatId: string) {
+  async parseHistory(request) {
     const source = await this.prisma.companySource.findFirst({
       where: {
         type: 'chat',
-        link: String(chatId),
+        link: String(request.chatId),
       },
     });
 
     if (!source) {
       return;
     }
+    const documents: IDocument[] = [];
 
-    let lastMessage: Api.Message;
+    let offsetId;
+    for await (const message of this.client.iterMessages(request.chatId, {
+      minId: 0,
+      limit: 500,
+      offsetId: request.offsetId,
+    })) {
+      const document = await this.parseHistoryMessage(message, source);
 
-    const limit = 500;
-    while (lastMessage?.id != 0) {
-      for await (const message of this.client.iterMessages(chatId, {
-        minId: 0,
-        limit,
-        offsetId: lastMessage?.id,
-      })) {
-        await this.onMessage(message, source, false);
-
-        if (lastMessage?.id < limit) {
-          break;
-        }
-
-        lastMessage = message;
+      if (document) {
+        documents.push(document);
       }
+
+      offsetId = message.id;
+    }
+
+    Logger.log(
+      `Parsed ${documents.length} messages from chat:${request.chatId}`,
+    );
+    if (documents.length) {
+      await this.agent.addToContext(source.companyId, documents);
+
+      await this.documentsQueue.add(
+        {
+          source: 'telegram',
+          type: 'chat',
+          offsetId,
+          chatId: request.chatId,
+        },
+        {
+          delay: 30_000,
+          priority: 2,
+        },
+      );
+    } else {
+      Logger.log(`Finish exporting chat: ${request.chatId}`);
+    }
+  }
+
+  async parseHistoryMessage(
+    message: Api.Message,
+    source: CompanySource,
+  ): Promise<IDocument | undefined> {
+    if (message.voice) {
+      return this.parseVoice(message, source.companyId);
+    }
+
+    if (message.file || message.audio || message.video) {
+      await this.onFile(message, source, 3, false);
+    }
+
+    if (message.text) {
+      return this.parseText(message, source.companyId);
     }
   }
 
@@ -160,7 +197,7 @@ export class TelegramService {
     }
 
     if (message.file || message.audio || message.video) {
-      await this.onFile(message, source, answer);
+      await this.onFile(message, source, 1, answer);
     }
 
     if (message.text) {
@@ -245,8 +282,18 @@ export class TelegramService {
     }
   }
 
-  async onText(message: Api.Message, source: CompanySource, answer = true) {
+  async parseText(message: Api.Message, companyId: number): Promise<IDocument> {
     const text = message.text;
+
+    return {
+      id: this.getIdFromMessage(companyId, message),
+      content: text,
+      meta: await this.getMetaFromCtx(message, 'telegram', 'message'),
+    };
+  }
+
+  async onText(message: Api.Message, source: CompanySource, answer = true) {
+    const document = await this.parseText(message, source.companyId);
 
     let replyMessage: Api.Message | undefined;
     if (message.replyTo) {
@@ -254,18 +301,19 @@ export class TelegramService {
     }
 
     if (
-      (answer && text.includes(this.configService.get('TELEGRAM_USERNAME'))) ||
+      (answer &&
+        document.content.includes(
+          this.configService.get('TELEGRAM_USERNAME'),
+        )) ||
       (replyMessage && replyMessage.senderId === this.me.id)
     ) {
       await this.onAsk(message, replyMessage);
       return;
     }
 
-    const meta = await this.getMetaFromCtx(message, 'telegram', 'message');
-
     if (answer && (process.env.NODE_ENV === 'dev' || source.companyId === 2)) {
       this.agent
-        .suggest(text, source.companyId, meta)
+        .suggest(document.content, source.companyId, document.meta)
         .then(async (answer) => {
           if (!answer) return;
 
@@ -280,23 +328,27 @@ export class TelegramService {
         });
     }
 
-    await this.agent.addToContext(
-      this.getIdFromMessage(source.companyId, message),
-      text,
-      source.companyId,
-      meta,
-    );
+    await this.agent.addToContext(source.companyId, [document]);
   }
 
-  async onFile(message: Api.Message, source: CompanySource, answer = true) {
-    await this.filesQueue.add({
-      companyId: source.companyId,
-      sourceId: source.id,
-      source: 'telegram',
-      chatId: message.chatId,
-      messageId: message.id,
-      answer,
-    });
+  async onFile(
+    message: Api.Message,
+    source: CompanySource,
+    priority = 1,
+    answer = true,
+  ) {
+    await this.documentsQueue.add(
+      {
+        companyId: source.companyId,
+        sourceId: source.id,
+        source: 'telegram',
+        type: 'file',
+        chatId: message.chatId,
+        messageId: message.id,
+        answer,
+      },
+      { priority },
+    );
   }
 
   async downloadAndProcessFile(file) {
@@ -343,7 +395,10 @@ export class TelegramService {
     }
   }
 
-  async onVoice(message: Api.Message, source: CompanySource) {
+  async parseVoice(
+    message: Api.Message,
+    companyId: number,
+  ): Promise<IDocument> {
     const voice = this.client.iterDownload({
       file: new Api.InputDocumentFileLocation({
         id: message.voice.id,
@@ -360,14 +415,17 @@ export class TelegramService {
       }),
     );
 
-    const meta = await this.getMetaFromCtx(message, 'telegram', 'message');
+    return {
+      id: this.getIdFromMessage(companyId, message),
+      content: transcript,
+      meta: await this.getMetaFromCtx(message, 'telegram', 'message'),
+    };
+  }
 
-    await this.agent.addToContext(
-      this.getIdFromMessage(source.companyId, message),
-      transcript,
-      source.companyId,
-      meta,
-    );
+  async onVoice(message: Api.Message, source: CompanySource) {
+    const document = await this.parseVoice(message, source.companyId);
+
+    await this.agent.addToContext(source.companyId, [document]);
   }
 
   private getIdFromMessage(companyId: number, message: Api.Message) {

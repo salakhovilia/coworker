@@ -62,6 +62,17 @@ class AddMessageRequest(BaseModel):
     meta: dict
 
 
+class DocumentRequest(BaseModel):
+    id: str
+    content: str
+    meta: dict
+
+
+class AddDocumentsRequest(BaseModel):
+    companyId: int
+    documents: List[DocumentRequest]
+
+
 class AddFileLinkRequest(BaseModel):
     companyId: int
     link: str
@@ -116,8 +127,20 @@ async def download_repo():
 @app.post("/api/agent/text")
 async def add_message(request: AddMessageRequest):
     await TextIngestionPipeline.arun(documents=[
-        Document(id=request.id, text=request.content, metadata={**request.meta, 'companyId': request.companyId})
+        Document(doc_id=request.id, text=request.content, metadata={**request.meta, 'companyId': request.companyId})
     ])
+
+    return {'status': 'ok'}
+
+
+@app.post("/api/agent/documents")
+async def add_documents(request: AddDocumentsRequest):
+    documents = []
+
+    for doc in request.documents:
+        documents.append(Document(doc_id=doc.id, text=doc.content, metadata={**doc.meta, 'companyId': request.companyId}))
+
+    await TextIngestionPipeline.arun(documents=documents)
 
     return {'status': 'ok'}
 

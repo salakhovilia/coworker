@@ -10,6 +10,12 @@ import { GoogleWorkspaceService } from '../google-workspace/google-workspace.ser
 import { Uploadable } from 'openai/uploads';
 import { Readable } from 'stream';
 
+export interface IDocument {
+  id: string;
+  content: string;
+  meta: Record<string, string | number>;
+}
+
 @Injectable()
 export class AgentService {
   private openai: OpenAI;
@@ -30,17 +36,10 @@ export class AgentService {
     });
   }
 
-  async addToContext(
-    id: string | number,
-    content: string,
-    companyId: number,
-    meta: Record<string, any>,
-  ) {
-    await this.agentApi.post('/text', {
-      id,
-      content,
+  async addToContext(companyId: number, documents: IDocument[]) {
+    await this.agentApi.post('/documents', {
       companyId,
-      meta,
+      documents,
     });
   }
 
