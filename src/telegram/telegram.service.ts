@@ -196,7 +196,7 @@ export class TelegramService {
       await this.onVoice(message, source);
     }
 
-    if (message.file || message.audio || message.video) {
+    if ((message.file || message.audio || message.video) && !message.voice) {
       await this.onFile(message, source, 1, answer);
     }
 
@@ -337,6 +337,11 @@ export class TelegramService {
     priority = 1,
     answer = true,
   ) {
+    // if size is more than 2Gb -> skip
+    if (message.document.size.toJSNumber() > 2147483648) {
+      return;
+    }
+
     await this.documentsQueue.add(
       {
         companyId: source.companyId,

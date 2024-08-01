@@ -1,29 +1,32 @@
 import tree_sitter_languages
 from llama_index.core.ingestion import IngestionPipeline, DocstoreStrategy, IngestionCache
-from llama_index.core.node_parser import SemanticSplitterNodeParser, CodeSplitter, SentenceSplitter
+from llama_index.core.node_parser import SemanticSplitterNodeParser, CodeSplitter
+from llama_index.embeddings.openai import OpenAIEmbedding
+
 
 from pipelines.base.db import vector_store
-from pipelines.base.embedding import embed_model
 
-sentence_splitter = SentenceSplitter()
+
 splitter = SemanticSplitterNodeParser(
-    buffer_size=1, breakpoint_percentile_threshold=98, embed_model=embed_model, include_metadata=False,
-    sentence_splitter=lambda text: sentence_splitter.split_text(text)
+    buffer_size=1, breakpoint_percentile_threshold=98,
+    embed_model=OpenAIEmbedding(model="text-embedding-3-small"),
+    include_metadata=False,
 )
 
-TextIngestionPipeline = IngestionPipeline(name='TextIngestion',
-                                          transformations=[
-                                              splitter,
-                                              embed_model
-                                          ],
-                                          vector_store=vector_store,
-                                          docstore_strategy=DocstoreStrategy.UPSERTS
-                                          )
+TextIngestionPipeline = IngestionPipeline(
+    name='TextIngestion',
+    transformations=[
+        splitter,
+        OpenAIEmbedding(model="text-embedding-3-small")
+    ],
+    vector_store=vector_store,
+    docstore_strategy=DocstoreStrategy.UPSERTS
+)
 
 
 def build_code_ingestion_pipeline(language: str):
     parser = tree_sitter_languages.get_parser(language)
     return IngestionPipeline(transformations=[
         CodeSplitter(language=language, parser=parser),
-        embed_model,
+        OpenAIEmbedding(model="text-embedding-3-small"),
     ], vector_store=vector_store, docstore_strategy=DocstoreStrategy.UPSERTS)

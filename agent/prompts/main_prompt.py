@@ -54,3 +54,18 @@ USER_SUGGESTION_PROMPT = (
     "{query_str}\n"
     "Answer: "
 )
+
+SYSTEM_REWRITE_QUERY_PROMPT = (
+    "You are the best query generator analyzing conversation"
+)
+
+USER_REWRITE_QUERY_PROMPT = (
+    "Please write a query to a semantic search engine using the current conversation.\n"
+    "\n"
+    "\n"
+    "{messages_str}"
+    "\n"
+    "\n"
+    "Latest message: {query_str}\n"
+    'Query:"""'
+)

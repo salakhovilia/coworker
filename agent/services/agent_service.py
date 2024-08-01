@@ -3,7 +3,7 @@ import logging
 from enum import Enum
 from typing import Optional, List, Any
 
-from llama_index.core import ChatPromptTemplate, SimpleDirectoryReader
+from llama_index.core import ChatPromptTemplate, SimpleDirectoryReader, PromptTemplate
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.query_pipeline import InputComponent, QueryPipeline
 from llama_index.core.response_synthesizers import TreeSummarize
@@ -70,11 +70,24 @@ class CalendarEventRoot(BaseModel):
 class AgentService:
 
     async def process_file(self, id, file_path, companyId: str, meta: dict):
+        extension = file_path.split('.')[-1]
+        extension = '.' + extension
+
+        file_extractor = {
+            '.m4a': VideoAudioReader(model_version='small'),
+            '.oga': VideoAudioReader(model_version='small'),
+            '.ogg': VideoAudioReader(model_version='small'),
+            '.mp4': VideoAudioReader(model_version='small'),
+        }
+
+        supported_files = SimpleDirectoryReader.supported_suffix_fn()
+        if extension not in supported_files and extension not in file_extractor:
+            logging.warning(f'Extension {extension} is not supported')
+            return
+
         reader = SimpleDirectoryReader(
             input_files=[file_path],
-            file_extractor={
-                '.m4a': VideoAudioReader()
-            }
+            file_extractor=file_extractor
         )
 
         [doc] = await reader.aload_data(show_progress=True)
@@ -238,14 +251,14 @@ class AgentService:
     #     docs = await reader.aload_data(branch='master')
     #     print(docs)
 
-    async def get_last_messages(self, companyId:int, chatId: str):
+    async def get_last_messages(self, companyId:int, chatId: str, limit=5):
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("SELECT text, metadata_ FROM data_documents "
                                      "WHERE metadata_->>'companyId'=%s and metadata_->>'type'='message'"
                                      " and metadata_->>'chatId'=%s "
                                      "ORDER BY metadata_->>'date' DESC "
-                                     "LIMIT 5", [str(companyId), str(chatId)])
+                                     "LIMIT %s", [str(companyId), str(chatId), str(limit)])
                 results = await cursor.fetchall()
                 return results
 
