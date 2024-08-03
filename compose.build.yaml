@@ -13,6 +13,7 @@ services:
       db:
         condition: service_healthy
     container_name: server
+
   agent:
     image: ghcr.io/salakhovilia/agent
     platform: linux/amd64
@@ -27,6 +28,7 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
     container_name: agent
     volumes:
       - uploads:/app/uploads
@@ -47,8 +49,10 @@ services:
   redis:
     image: redis:7.2-alpine
     restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
     ports:
-      - 6379:6379
+      - 127.0.0.1:6379:6379
     volumes:
       - redis-data:/data
 
@@ -71,5 +75,6 @@ services:
     container_name: db
 volumes:
   db-data:
+  redis-data:
   uploads:
 

@@ -11,15 +11,28 @@ from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 # from llama_index.readers.github import GithubClient, GithubRepositoryReader
 from llama_index.llms.openai import OpenAI
 from llama_index.core.types import BaseModel
-from llama_index.readers.file import VideoAudioReader
 # from llama_index.readers.github import GithubRepositoryReader, GithubClient
 from pydantic.v1 import Field
 from pipelines.base.db import index, pool
+from pipelines.base.video_audio_reader import AudioReader
 from pipelines.ingestion_pipeline import TextIngestionPipeline, build_code_ingestion_pipeline
 from prompts.calendar_prompts import SYSTEM_PROMPT_CALENDAR, USER_PROMPT_CALENDAR
 from prompts.git_prompt import SYSTEM_GIT_DIFF_SUMMARY
 from prompts.main_prompt import SYSTEM_SUGGESTION_PROMPT, USER_SUGGESTION_PROMPT, SYSTEM_PROMPT, USER_QUERY_PROMPT
 from utils.ext_to_lang import EXTENSION_TO_LANGUAGE
+
+FILE_EXTRACTOR = {
+    ".flac": AudioReader(),
+    ".mp3": AudioReader(),
+    ".mp4": AudioReader(),
+    ".mpeg": AudioReader(),
+    ".mpga": AudioReader(),
+    ".m4a": AudioReader(),
+    ".ogg": AudioReader(),
+    ".oga": AudioReader(),
+    ".wav": AudioReader(),
+    ".webm": AudioReader()
+}
 
 
 class Query(BaseModel):
@@ -67,27 +80,22 @@ class CalendarEventRoot(BaseModel):
     message: str
 
 
+logger = logging.getLogger(__name__)
+
+
 class AgentService:
 
     async def process_file(self, id, file_path, companyId: str, meta: dict):
-        extension = file_path.split('.')[-1]
-        extension = '.' + extension
-
-        file_extractor = {
-            '.m4a': VideoAudioReader(model_version='small'),
-            '.oga': VideoAudioReader(model_version='small'),
-            '.ogg': VideoAudioReader(model_version='small'),
-            '.mp4': VideoAudioReader(model_version='small'),
-        }
+        extension = '.' + file_path.split('.')[-1]
 
         supported_files = SimpleDirectoryReader.supported_suffix_fn()
-        if extension not in supported_files and extension not in file_extractor:
-            logging.warning(f'Extension {extension} is not supported')
+        if extension not in supported_files and extension not in FILE_EXTRACTOR:
+            logger.warning(f'Extension {extension} is not supported')
             return
 
         reader = SimpleDirectoryReader(
             input_files=[file_path],
-            file_extractor=file_extractor
+            file_extractor=FILE_EXTRACTOR
         )
 
         [doc] = await reader.aload_data(show_progress=True)

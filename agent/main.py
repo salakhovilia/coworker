@@ -24,7 +24,10 @@ from services.agent_service import AgentService
 
 load_dotenv()
 
+mimetypes.add_type('audio/x-m4a', '.m4a')
 
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -148,6 +151,10 @@ async def add_documents(request: AddDocumentsRequest):
 @app.post("/api/agent/files")
 async def add_file(id: Annotated[str, Form()], file: UploadFile, companyId: Annotated[str, Form()], meta: Annotated[str, Form()]):
     extension = mimetypes.guess_extension(file.content_type)
+
+    if not extension:
+        logger.warning(f'Extension {extension} is not supported')
+        return
 
     file_path = ''
     with NamedTemporaryFile(delete=False, dir='uploads', suffix=extension) as temp_file:

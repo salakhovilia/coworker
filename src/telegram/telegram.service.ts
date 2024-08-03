@@ -57,7 +57,7 @@ export class TelegramService {
     @InjectQueue(Queues.Documents) private documentsQueue: Queue,
   ) {
     this.client = new TelegramClient(
-      new StringSession(this.configService.get('TELEGRAM_SESSION')),
+      new StringSession(this.configService.getOrThrow('TELEGRAM_SESSION')),
       Number(this.configService.getOrThrow('TELEGRAM_API_ID')),
       this.configService.getOrThrow<string>('TELEGRAM_API_HASH'),
 
@@ -178,11 +178,7 @@ export class TelegramService {
     message: Api.Message,
     source: CompanySource,
   ): Promise<IDocument | undefined> {
-    if (message.voice) {
-      return this.parseVoice(message, source.companyId);
-    }
-
-    if (message.file || message.audio || message.video) {
+    if (message.file || message.audio || message.video || message.voice) {
       await this.onFile(message, source, 3, false);
     }
 
@@ -192,11 +188,7 @@ export class TelegramService {
   }
 
   async onMessage(message: Api.Message, source: CompanySource, answer = true) {
-    if (message.voice) {
-      await this.onVoice(message, source);
-    }
-
-    if ((message.file || message.audio || message.video) && !message.voice) {
+    if (message.file || message.audio || message.video || message.voice) {
       await this.onFile(message, source, 1, answer);
     }
 

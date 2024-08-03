@@ -19,11 +19,11 @@ services:
       - .env
     ports:
       - 8000:8000
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
-
-
 
   langfuse-server:
     restart: unless-stopped
@@ -38,6 +38,14 @@ services:
     environment:
       - TELEMETRY_ENABLED=false
       - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
+
+  redis:
+    image: redis:7.2-alpine
+    restart: always
+    ports:
+      - 127.0.0.1:6379:6379
+    volumes:
+      - redis-data:/data
 
   db:
     image: pgvector/pgvector:0.7.0-pg15
@@ -56,4 +64,6 @@ services:
       retries: 5
 volumes:
   db-data:
+  redis-data:
+  uploads:
 

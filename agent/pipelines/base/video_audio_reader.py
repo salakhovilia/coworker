@@ -1,12 +1,11 @@
-"""Video audio parser.
-
-Contains parsers for mp3, mp4 files.
-
-"""
-
+import asyncio
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 import logging
+
+import aiofiles.os
+import openai
 from fsspec import AbstractFileSystem
 
 from llama_index.core.readers.base import BaseReader
@@ -22,56 +21,67 @@ class AudioReader(BaseReader):
 
     """
 
-    def __init__(self, *args: Any, model_version: str = "base", **kwargs: Any) -> None:
+    supported_files = [
+        "flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "oga", "wav", "webm"
+    ]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Init parser."""
         super().__init__(*args, **kwargs)
-        self._model_version = model_version
+        self._client = openai.AsyncOpenAI()
 
-        try:
-            import whisper
-        except ImportError:
-            raise ImportError(
-                "Please install OpenAI whisper model "
-                "'pip install git+https://github.com/openai/whisper.git' "
-                "to use the model"
-            )
-
-        model = whisper.load_model(self._model_version)
-
-        self.parser_config = {"model": model}
-
-    def load_data(
-        self,
-        file: Path,
-        extra_info: Optional[Dict] = None,
-        fs: Optional[AbstractFileSystem] = None,
+    async def aload_data(
+            self,
+            path: Path,
+            extra_info: Optional[Dict] = None,
+            fs: Optional[AbstractFileSystem] = None,
     ) -> List[Document]:
-        """Parse file."""
-        import whisper
+        extension = path.name.split('.')[-1]
+        if extension not in self.supported_files:
+            logger.warning(f'Unsupported file type: {extension}')
+            return []
 
-        try:
-            from pydub import AudioSegment
-        except ImportError:
-            raise ImportError("Please install pydub 'pip install pydub' ")
-        if fs:
-            with fs.open(file, "rb") as f:
-                video = AudioSegment.from_file(f, format="mp4")
-        else:
-            # open file
-            video = AudioSegment.from_file(file, format="mp4")
+        proc = await asyncio.create_subprocess_shell(
+            f'sh pipelines/base/split_media.sh {str(path)} 20971520 "-hide_banner -loglevel error"',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE)
 
-        # Extract audio from video
-        audio = video.split_to_mono()[0]
+        stdout, stderr = await proc.communicate()
 
-        file_str = str(file)[:-4] + ".mp3"
-        # export file
-        audio.export(file_str, format="mp3")
+        chunks: List[str] = []
+        if stdout:
+            data = stdout.decode()
+            chunks = [chunk for chunk in data.split('\n') if len(chunk.strip())]
 
-        model = cast(whisper.Whisper, self.parser_config["model"])
-        result = model.transcribe(str(file))
+        if stderr:
+            logger.error(f'[stderr] {stderr.decode()}')
 
-        transcript = result["text"]
+        if not len(chunks):
+            return []
 
-        print(result)
+        result = ''
+        for chunk in chunks:
+            response = await self._client.audio.transcriptions.create(
+                file=Path(chunk), model='whisper-1', response_format='json'
+            )
+            result += '\n' + response.text
 
-        return [Document(text=transcript, metadata=extra_info or {})]
+            await aiofiles.os.unlink(chunk)
+
+        if not result:
+            return []
+
+        response = await self._client.chat.completions.create(messages=[
+            {
+                "role": "system",
+                "content": 'Your task is to correct any spelling discrepancies in the transcribed text. Only add '
+                           'necessary punctuation such as periods, commas, and capitalization, and use only the '
+                           'context provided."'
+            },
+            {
+                "role": "user",
+                "content": result
+            }
+        ], model='gpt-4o-mini', temperature=0)
+
+        return [Document(text=response.choices[0].message.content, metadata=extra_info or {})]

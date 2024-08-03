@@ -12,6 +12,7 @@ import { TelegramAdminService } from './telegram/telegram-admin.service';
 import { BullModule } from '@nestjs/bull';
 import { DocumentsQueue } from './queues/documents.queue';
 import { Queues } from './queues/queues';
+import * as process from 'node:process';
 
 let configPath = '.env';
 if (process.env.NODE_ENV !== 'production') {
@@ -27,7 +28,7 @@ if (process.env.NODE_ENV !== 'production') {
     EventEmitterModule.forRoot(),
     BullModule.forRoot({
       redis: {
-        host: 'localhost',
+        host: process.env.NODE_ENV === 'production' ? 'redis' : 'localhost',
         port: 6379,
       },
     }),

@@ -19,6 +19,7 @@ import { TelegramService } from './telegram.service';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { Queues } from '../queues/queues';
+import { RESPONSES } from './responses';
 
 @Injectable()
 export class TelegramAdminService {
@@ -73,21 +74,18 @@ export class TelegramAdminService {
   }
 
   async onStart(ctx: CoworkerContext) {
-    await ctx.reply(
-      "*Hello and Welcome!*\n\nI'm your AI assistant, here to help you with anything you need in our company. Whether you have questions, need assistance with tasks, or require information, I'm here to support you. Feel free to ask me anything!\n\n**How can I assist you today?**",
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: 'Show companies', callback_data: 'showCompanies' },
-              { text: 'Add company', callback_data: 'addCompany' },
-            ],
-            [{ text: 'Add source', callback_data: 'addSource' }],
+    await ctx.reply(RESPONSES.welcome, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Show companies', callback_data: 'showCompanies' },
+            { text: 'Add company', callback_data: 'addCompany' },
           ],
-        },
+          [{ text: 'Add source', callback_data: 'addSource' }],
+        ],
       },
-    );
+    });
   }
 
   async onGetChatId(ctx: CoworkerContext) {
@@ -100,7 +98,7 @@ export class TelegramAdminService {
     });
 
     if (!companies.length) {
-      return ctx.reply('You dont have companies');
+      return ctx.reply(RESPONSES.emptyCompanies);
     }
 
     await ctx.reply('Your companies:', {

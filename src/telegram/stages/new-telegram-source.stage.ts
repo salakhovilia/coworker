@@ -7,6 +7,7 @@ import { BaseScene } from 'telegraf/typings/scenes';
 import { Logger } from '@nestjs/common';
 import { TelegramService } from '../telegram.service';
 import { Queue } from 'bull';
+import { RESPONSES } from '../responses';
 
 export function newTelegramSourceStageFactory(
   prisma: PrismaService,
@@ -19,9 +20,7 @@ export function newTelegramSourceStageFactory(
   newSourceScene.enter(async (ctx: CoworkerContext) => {
     ctx.session.newChatId = undefined;
 
-    await ctx.editMessageText(
-      'You have to add @coworker_ai to chat, copy result of /chatId and paste there',
-    );
+    await ctx.editMessageText(RESPONSES.addTelegram);
   });
 
   newSourceScene.on(message('text'), async (ctx) => {

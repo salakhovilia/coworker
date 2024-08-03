@@ -4,6 +4,7 @@ import { CoworkerContext } from '../context';
 import { ScenesIds } from './scenes';
 import { BaseScene } from 'telegraf/typings/scenes';
 import { GoogleWorkspaceService } from '../../google-workspace/google-workspace.service';
+import { RESPONSES } from '../responses';
 
 export function newGoogleCalendarSourceStageFactory(
   prisma: PrismaService,
@@ -13,7 +14,7 @@ export function newGoogleCalendarSourceStageFactory(
     ScenesIds.newGoogleCalendarSource,
   );
   newSourceScene.enter(async (ctx: CoworkerContext) => {
-    await ctx.editMessageText('Allow access to your account');
+    await ctx.editMessageText(RESPONSES.addGoogleCalendar);
     await ctx.editMessageReplyMarkup(
       Markup.inlineKeyboard([
         Markup.button.url(

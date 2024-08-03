@@ -6,6 +6,7 @@ import { message } from 'telegraf/filters';
 import { ScenesIds } from './scenes';
 import { BaseScene } from 'telegraf/typings/scenes';
 import { AgentService } from 'src/agent/agent.service';
+import { RESPONSES } from '../responses';
 
 export function newCompanyStageFactory(
   prisma: PrismaService,
@@ -15,7 +16,7 @@ export function newCompanyStageFactory(
     ScenesIds.newCompany,
   );
   newCompanyScene.enter(async (ctx: CoworkerContext) => {
-    await ctx.reply('Enter company name:');
+    await ctx.reply(RESPONSES.companyName);
   });
 
   newCompanyScene.on(message('text'), async (ctx) => {
