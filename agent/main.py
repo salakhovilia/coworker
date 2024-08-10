@@ -50,7 +50,8 @@ app.add_middleware(
 langfuse_callback_handler = LlamaIndexCallbackHandler(
     public_key=os.environ.get('LANGFUSE_PUBLIC_KEY'),
     secret_key=os.environ.get('LANGFUSE_SECRET_KEY'),
-    host=os.environ.get('LANGFUSE_HOST')
+    host=os.environ.get('LANGFUSE_HOST'),
+    debug=False
 )
 Settings.callback_manager = CallbackManager([langfuse_callback_handler])
 

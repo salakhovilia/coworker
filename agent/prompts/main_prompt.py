@@ -17,14 +17,10 @@ SYSTEM_PROMPT = ("You are an colleague and you are an expert Q&A system that is 
 USER_QUERY_PROMPT = (
     "Context information from multiple sources is below.\n"
     "---------------------\n"
-    "{context_str}\n"
+    "{node_context}\n"
     "---------------------\n"
     "Given the information from multiple sources and not prior knowledge, "
     "answer the query.\n\n"
-    "Use latest messages for more relevant answer. Latest messages are below.\n"
-    "---------------------\n"
-    "{messages_str}"
-    "---------------------\n\n"
 
     "Query:\n"
     "{query_str}\n"
@@ -56,16 +52,19 @@ USER_SUGGESTION_PROMPT = (
 )
 
 SYSTEM_REWRITE_QUERY_PROMPT = (
-    "You are the best query generator analyzing conversation"
+    "You are the world's best semantic search question generator.\n"
+    "You should optimize the user's query, add making it complete and useful for semantic search.\n"
+    "Answer in the language of a query.\n"
+    "Answer in plain format.\n"
+    "Answer without mentioning chats, authors, id or other metadata.\n"
+    "You haven't to use a useless messages for a new query."
 )
 
 USER_REWRITE_QUERY_PROMPT = (
-    "Please write a query to a semantic search engine using the current conversation.\n"
-    "\n"
-    "\n"
+    "Use a conversation as context for writing more complex and useful query. The conversation is below.\n"
+    "-------\n"
     "{messages_str}"
-    "\n"
-    "\n"
-    "Latest message: {query_str}\n"
-    'Query:"""'
+    "-------\n"
+    "Query:\n{query_str}\n"
+    "Generated query: "
 )

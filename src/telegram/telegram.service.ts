@@ -219,9 +219,9 @@ export class TelegramService {
     }
 
     let question = message.text;
-    if (replyMessage) {
-      question = `> ${replyMessage.text}\n${question}`;
-    }
+    // if (replyMessage) {
+    //   question = `\nReplied message: ${replyMessage.text}\nQuery:${question}`;
+    // }
 
     let response;
     try {
@@ -232,16 +232,21 @@ export class TelegramService {
       );
     } catch (err) {
       Logger.error(err);
-      await message.reply(err);
+      await message.reply({
+        message: err,
+        silent: true,
+      });
       return;
     }
 
     if (response) {
-      await message.reply({
+      const answer = await message.reply({
         message: response,
         parseMode: 'markdown',
         silent: true,
       });
+
+      await this.agent.addToContext(source.companyId, [await this.parseText(answer, source.companyId)]);
     }
   }
 
@@ -292,13 +297,11 @@ export class TelegramService {
       replyMessage = await message.getReplyMessage();
     }
 
-    if (
-      (answer &&
-        document.content.includes(
-          this.configService.get('TELEGRAM_USERNAME'),
-        )) ||
-      (replyMessage && replyMessage.senderId === this.me.id)
-    ) {
+    const isMentioned = document.content.includes(
+      this.configService.get('TELEGRAM_USERNAME'),
+    ) || replyMessage?.senderId.toString() === this.me.id.toString()
+
+    if (answer && isMentioned) {
       await this.onAsk(message, replyMessage);
       return;
     }
@@ -329,11 +332,6 @@ export class TelegramService {
     priority = 1,
     answer = true,
   ) {
-    // if size is more than 2Gb -> skip
-    if (message.document.size.toJSNumber() > 2147483648) {
-      return;
-    }
-
     await this.documentsQueue.add(
       {
         companyId: source.companyId,
@@ -353,11 +351,28 @@ export class TelegramService {
       ids: file.messageId,
     });
 
+    if (!message) {
+      Logger.warn('Message not found');
+
+      return;
+    }
+
+    const document = message.document || message.voice || message.audio;
+
+    console.log(document);
+
+    // if size is more than 2Gb -> skip
+    if (('size' in document) && Number(document.size.toString()) > 2147483648) {
+      Logger.debug('Skip file')
+      return;
+    }
+
+
     const fileIter = this.client.iterDownload({
       file: new Api.InputDocumentFileLocation({
-        id: message.document.id,
-        accessHash: message.document.accessHash,
-        fileReference: message.document.fileReference,
+        id: document.id,
+        accessHash: document.accessHash,
+        fileReference: document.fileReference,
         thumbSize: '0',
       }),
       requestSize: 1000000,
@@ -369,7 +384,7 @@ export class TelegramService {
       downloadedSize += chunk.length;
 
       Logger.log(
-        `File ${message.document.id} downloaded: ${((downloadedSize / message.document.size.toJSNumber()) * 100).toPrecision(2)}%`,
+        `File ${document.id} downloaded: ${((downloadedSize / document.size.toJSNumber()) * 100).toPrecision(2)}%`,
       );
     });
 
@@ -377,7 +392,7 @@ export class TelegramService {
       this.getIdFromMessage(file.companyId, message),
       file.companyId,
       stream,
-      message.document.mimeType,
+      document.mimeType,
       await this.getMetaFromCtx(message, 'telegram', 'file'),
     );
 
@@ -450,6 +465,7 @@ export class TelegramService {
       authorUsername: sender?.username,
       authorFirstName: sender?.firstName,
       authorLastName: sender?.lastName,
+      role: this.me.id.toString() === message.senderId.toString()? 'assistant': 'user',
     };
   }
 

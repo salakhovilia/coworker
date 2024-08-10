@@ -10,7 +10,6 @@ from pipelines.base.db import vector_store
 splitter = SemanticSplitterNodeParser(
     buffer_size=1, breakpoint_percentile_threshold=98,
     embed_model=OpenAIEmbedding(model="text-embedding-3-small"),
-    include_metadata=False,
 )
 
 TextIngestionPipeline = IngestionPipeline(

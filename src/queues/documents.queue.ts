@@ -1,7 +1,8 @@
-import { Process, Processor } from '@nestjs/bull';
+import { OnQueueError, Process, Processor } from '@nestjs/bull';
 import { Job } from 'bull';
 import { TelegramService } from '../telegram/telegram.service';
 import { Queues } from './queues';
+import { Logger } from '@nestjs/common';
 
 @Processor(Queues.Documents)
 export class DocumentsQueue {
@@ -20,5 +21,10 @@ export class DocumentsQueue {
     }
 
     return {};
+  }
+  
+  @OnQueueError()
+  onError(event) {
+    Logger.error(event);
   }
 }

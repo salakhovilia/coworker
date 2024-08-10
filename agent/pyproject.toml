@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "agent"
+version = "0.1.0"
+package-mode = false
+description = ""
+authors = ["Ilia <salahov.ilia24@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.112.0"
+aiofiles = "^24.1.0"
+llama-index = "0.10.61"
+langfuse = "^2.42.1"
+docx2txt = "^0.8"
+html2text = "^2024.2.26"
+llama-index-callbacks-langfuse = "^0.1.4"
+llama-index-vector-stores-postgres = "^0.1.13"
+markdown-it-py = "^3.0.0"
+psycopg = "^3.2.1"
+psycopg-binary = "^3.2.1"
+psycopg-pool = "^3.2.2"
+python-dotenv = "^1.0.1"
+python-multipart = "^0.0.9"
+python-pptx = "^0.6.23"
+tree-sitter = "^0.22.3"
+tree-sitter-languages = "^1.10.2"
+transformers = "^4.43.3"
+fastapi-cli = "^0.0.5"
+gunicorn = "^22.0.0"
+uvicorn = "^0.30.5"
+pillow = "^10.4.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
