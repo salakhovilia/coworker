@@ -35,3 +35,5 @@ README.md
 *.env
 !sample.env
 *.pem
+agent
+agent

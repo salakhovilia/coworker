@@ -2,24 +2,50 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
-import { Scenes, Telegraf, session, Markup } from 'telegraf';
-import { newCompanyStageFactory } from './stages/new-company.stage';
-import { CoworkerContext } from './context';
-import { ScenesIds } from './stages/scenes';
-import { newTelegramSourceStageFactory } from './stages/new-telegram-source.stage';
-import { message } from 'telegraf/filters';
-import { AgentService } from '../agent/agent.service';
-import { newGoogleDriveSourceStageFactory } from './stages/new-gdrive-source.stage';
+import { AgentService, IDocument } from '../agent/agent.service';
 import { GoogleWorkspaceService } from '../google-workspace/google-workspace.service';
-import { newGoogleCalendarSourceStageFactory } from './stages/new-google-calendar-source.stage';
-import { OnEvent } from '@nestjs/event-emitter';
 import * as process from 'node:process';
-import { newGithubSourceStageFactory } from './stages/new-github-source.stage';
-import { GithubService } from '../github/github.service';
+import { TelegramClient, Logger as TGLogger, Api } from 'telegram';
+import { NewMessage } from 'telegram/events';
+import { StringSession } from 'telegram/sessions';
+import { LogLevel } from 'telegram/extensions/Logger';
+import { toFile } from 'openai';
+import { CompanySource } from '@prisma/client';
+import { Readable } from 'stream';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+import { Queues } from '../queues/queues';
+
+class GramLogger extends TGLogger {
+  static logger = new Logger('GramJS');
+  log(level: LogLevel, message: string) {
+    switch (level) {
+      case LogLevel.NONE:
+        GramLogger.logger.verbose(message);
+        break;
+      case LogLevel.DEBUG:
+        GramLogger.logger.debug(message);
+        break;
+      case LogLevel.INFO:
+        GramLogger.logger.log(message);
+        break;
+      case LogLevel.ERROR:
+        GramLogger.logger.error(message);
+        break;
+      case LogLevel.WARN:
+        GramLogger.logger.warn(message);
+    }
+  }
+}
 
 @Injectable()
 export class TelegramService {
-  private bot: Telegraf;
+  private readonly client: TelegramClient;
+  private me: Api.User;
+  private commands: Record<
+    string,
+    (message: Api.Message) => void | Promise<void>
+  > = {};
 
   constructor(
     private readonly configService: ConfigService,
@@ -27,97 +53,161 @@ export class TelegramService {
 
     private readonly agent: AgentService,
     private readonly googleWorkspace: GoogleWorkspaceService,
-    private readonly githubService: GithubService,
+
+    @InjectQueue(Queues.Documents) private documentsQueue: Queue,
   ) {
-    this.bot = new Telegraf<CoworkerContext>(
-      this.configService.getOrThrow('TELEGRAM_TOKEN'),
-    );
+    this.client = new TelegramClient(
+      new StringSession(this.configService.getOrThrow('TELEGRAM_SESSION')),
+      Number(this.configService.getOrThrow('TELEGRAM_API_ID')),
+      this.configService.getOrThrow<string>('TELEGRAM_API_HASH'),
 
-    this.bot.use(session());
-
-    this.bot.start(this.onStart.bind(this));
-    this.bot.command('chatId', this.onGetChatId.bind(this));
-    this.bot.command('ask', this.onAsk.bind(this));
-    this.bot.command('calendar', this.onCalendar.bind(this));
-
-    const stage = new Scenes.Stage<CoworkerContext>([
-      newCompanyStageFactory(this.prisma, this.agent),
-      newTelegramSourceStageFactory(this.prisma),
-      newGoogleDriveSourceStageFactory(this.prisma, this.googleWorkspace),
-      newGoogleCalendarSourceStageFactory(this.prisma, this.googleWorkspace),
-      newGithubSourceStageFactory(this.prisma, this.githubService),
-    ]);
-
-    this.bot.use(stage.middleware());
-
-    this.bot.action('showCompanies', this.onShowCompanies.bind(this));
-    this.bot.action('addCompany', this.onAddCompany.bind(this));
-    this.bot.action('addSource', this.onAddSource.bind(this));
-
-    this.bot.action(/^company-(\d+)$/, this.onSelectCompany.bind(this));
-    this.bot.action(
-      /^select-calendar-(.*)-(.*)$/,
-      this.onSelectCalendar.bind(this),
-    );
-    this.bot.action(/^newSource-scene-(.*)$/, this.onNewSource.bind(this));
-
-    this.bot.on(message('text'), this.onText.bind(this));
-    this.bot.on(message('document'), this.onDocument.bind(this));
-    this.bot.on(message('voice'), this.onVoice.bind(this));
-    this.bot.on(message('photo'), this.onPhoto.bind(this));
-
-    this.bot.launch();
-  }
-
-  async onStart(ctx: CoworkerContext) {
-    await ctx.reply(
-      "*Hello and Welcome!*\n\nI'm your AI assistant, here to help you with anything you need in our company. Whether you have questions, need assistance with tasks, or require information, I'm here to support you. Feel free to ask me anything!\n\n**How can I assist you today?**",
       {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: 'Show companies', callback_data: 'showCompanies' },
-              { text: 'Add company', callback_data: 'addCompany' },
-            ],
-            [{ text: 'Add source', callback_data: 'addSource' }],
-          ],
-        },
+        useWSS: false,
+        baseLogger: new GramLogger(LogLevel.WARN),
       },
     );
-  }
 
-  async onGetChatId(ctx: CoworkerContext) {
-    await ctx.reply(`ChatId: ${ctx.chat.id}`);
-  }
-
-  async onShowCompanies(ctx: CoworkerContext) {
-    const companies = await this.prisma.company.findMany({
-      where: { adminChatId: ctx.chat.id },
+    this.client.connect().then(async () => {
+      this.me = await this.client.getMe();
     });
 
-    if (!companies.length) {
-      return ctx.reply('You dont have companies');
+    this.client.addEventHandler(async (event) => {
+      const isHandled = await this.checkAndHandleCommand(event.message);
+
+      if (isHandled) {
+        return;
+      }
+
+      const source = await this.prisma.companySource.findFirst({
+        where: {
+          type: 'chat',
+          link: String(event.message.chatId),
+        },
+      });
+
+      if (!source) {
+        return;
+      }
+
+      this.onMessage(event.message, source).catch((err) => {
+        Logger.error(err);
+      });
+    }, new NewMessage({}));
+
+    this.command('chatId', this.onGetChatId.bind(this));
+    this.command('ask', this.onAsk.bind(this));
+    this.command('calendar', this.onCalendar.bind(this));
+    this.command('parse', this.onParse.bind(this));
+  }
+
+  command(name: string, handler: (message: Api.Message) => void) {
+    this.commands[`/${name}`] = handler;
+  }
+
+  async checkAndHandleCommand(message: Api.Message) {
+    for (const command of Object.keys(this.commands)) {
+      if (command === message.text) {
+        await this.commands[command](message);
+        return true;
+      }
     }
 
-    await ctx.reply('Your companies:', {
-      reply_markup: {
-        inline_keyboard: [
-          companies.map((c) => ({ text: c.name, callback_data: 'empty' })),
-        ],
-      },
-    });
+    return false;
   }
 
-  onAddCompany(ctx: CoworkerContext) {
-    ctx.scene.enter(ScenesIds.newCompany);
+  async getChat(chatId: string) {
+    return this.client.getInputEntity(chatId);
   }
 
-  async onAsk(ctx) {
+  async onParse(message: Api.Message) {
+    await this.parseHistory({ chatId: message.chatId.toString() });
+  }
+
+  async parseHistory(request) {
     const source = await this.prisma.companySource.findFirst({
       where: {
         type: 'chat',
-        link: String(ctx.chat.id),
+        link: String(request.chatId),
+      },
+    });
+
+    if (!source) {
+      return;
+    }
+    const documents: IDocument[] = [];
+
+    let offsetId;
+    for await (const message of this.client.iterMessages(request.chatId, {
+      minId: 0,
+      limit: 500,
+      offsetId: request.offsetId,
+    })) {
+      const document = await this.parseHistoryMessage(message, source);
+
+      if (document) {
+        documents.push(document);
+      }
+
+      offsetId = message.id;
+    }
+
+    Logger.log(
+      `Parsed ${documents.length} messages from chat:${request.chatId}`,
+    );
+    if (documents.length) {
+      await this.agent.addToContext(source.companyId, documents);
+
+      await this.documentsQueue.add(
+        {
+          source: 'telegram',
+          type: 'chat',
+          offsetId,
+          chatId: request.chatId,
+        },
+        {
+          delay: 30_000,
+          priority: 2,
+        },
+      );
+    } else {
+      Logger.log(`Finish exporting chat: ${request.chatId}`);
+    }
+  }
+
+  async parseHistoryMessage(
+    message: Api.Message,
+    source: CompanySource,
+  ): Promise<IDocument | undefined> {
+    if (message.file || message.audio || message.video || message.voice) {
+      await this.onFile(message, source, 3, false);
+    }
+
+    if (message.text) {
+      return this.parseText(message, source.companyId);
+    }
+  }
+
+  async onMessage(message: Api.Message, source: CompanySource, answer = true) {
+    if (message.file || message.audio || message.video || message.voice) {
+      await this.onFile(message, source, 1, answer);
+    }
+
+    if (message.text) {
+      await this.onText(message, source, answer);
+    }
+
+    await message.markAsRead();
+  }
+
+  async onGetChatId(message: Api.Message) {
+    await message.reply({ message: `ChatId: ${message.chatId}` });
+  }
+
+  async onAsk(message: Api.Message, replyMessage?: Api.Message) {
+    const source = await this.prisma.companySource.findFirst({
+      where: {
+        type: 'chat',
+        link: String(message.chatId),
       },
       include: {
         company: true,
@@ -125,121 +215,47 @@ export class TelegramService {
     });
 
     if (!source) {
-      return ctx.reply('Source not found');
+      return message.reply({ message: 'Source not found' });
+
     }
 
-    const chat = ctx.chat;
-
-    let question = ctx.payload || (ctx.message.text as string);
-
-    if (ctx.message.reply_to_message) {
-      question = `> ${ctx.message.reply_to_message.text}\n${question}`;
-    }
+    let question = message.text;
+    // if (replyMessage) {
+    //   question = `\nReplied message: ${replyMessage.text}\nQuery:${question}`;
+    // }
 
     let response;
     try {
-      response = await this.agent.ask(question, source.companyId, {
-        date: new Date(ctx.message.date * 1000).toISOString(),
-        type: 'telegram-question',
-        chatId: ctx.chat.id,
-        chatTitle: chat.title,
-        authorUsername: ctx.message.from.username,
-        authorFirstName: ctx.message.from.first_name,
-      });
+      response = await this.agent.ask(
+        question,
+        source.companyId,
+        await this.getMetaFromCtx(message, 'telegram', 'question'),
+      );
     } catch (err) {
       Logger.error(err);
-      ctx.reply(err);
+      await message.reply({
+        message: err,
+        silent: true,
+      });
       return;
     }
 
     if (response) {
-      await ctx.reply(response, {
-        parse_mode: 'Markdown',
-        disable_notification: true,
-        reply_parameters: { message_id: ctx.message.message_id },
-      });
-    }
-  }
-
-  async onAddSource(ctx: CoworkerContext) {
-    const companies = await this.prisma.company.findMany({
-      where: { adminChatId: ctx.chat.id },
-    });
-
-    const buttons = [];
-    for (const company of companies) {
-      buttons.push({
-        text: company.name,
-        callback_data: `company-${company.id}`,
-      });
-    }
-
-    await ctx.reply('Select company:', {
-      reply_markup: {
-        inline_keyboard: [buttons],
-      },
-    });
-  }
-
-  async onSelectCompany(ctx: CoworkerContext) {
-    ctx.session.companyId = Number(ctx.match[1]);
-
-    const sources = [
-      {
-        title: 'Telegram',
-        scene: ScenesIds.newTelegramSource,
-      },
-      {
-        title: 'Google Calendar',
-        scene: ScenesIds.newGoogleCalendarSource,
-      },
-      {
-        title: 'Google Drive',
-        scene: ScenesIds.newGoogleDriveSource,
-      },
-      {
-        title: 'Github',
-        scene: ScenesIds.newGithubSource,
-      },
-    ];
-
-    // experimental features
-    if (process.env.NODE_ENV === 'dev' || ctx.session.companyId === 2) {
-      // sources.push();
-    }
-
-    const BUTTONS_PER_ROW = 2;
-
-    const buttons = [];
-    let row = [];
-
-    for (let i = 0; i < sources.length; i++) {
-      const source = sources[i];
-
-      row.push({
-        text: source.title,
-        callback_data: `newSource-scene-${source.scene}`,
+      const answer = await message.reply({
+        message: response,
+        parseMode: 'markdown',
+        silent: true,
       });
 
-      if (row.length === BUTTONS_PER_ROW || i === sources.length - 1) {
-        buttons.push(row);
-        row = [];
-      }
+      await this.agent.addToContext(source.companyId, [await this.parseText(answer, source.companyId)]);
     }
-
-    await ctx.editMessageText('Choose source:');
-    await ctx.editMessageReplyMarkup({ inline_keyboard: buttons });
   }
 
-  onNewSource(ctx) {
-    ctx.scene.enter(ctx.match[1]);
-  }
-
-  async onCalendar(ctx) {
+  async onCalendar(message: Api.Message) {
     const source = await this.prisma.companySource.findFirst({
       where: {
         type: 'chat',
-        link: String(ctx.chat.id),
+        link: String(message.chatId),
       },
       include: {
         company: true,
@@ -252,53 +268,55 @@ export class TelegramService {
 
     try {
       const event = await this.agent.generateEvent(
-        ctx.payload,
+        message.text,
         source.company.id,
-        this.getMetaFromCtx(ctx, 'telegram-message'),
+        await this.getMetaFromCtx(message, 'telegram', 'message'),
       );
 
       await this.googleWorkspace.processEvent(source.companyId, event);
-      ctx.reply(event.message);
+      await message.reply(event.message);
     } catch (err) {
       Logger.error(err);
     }
   }
 
-  async onText(ctx) {
-    const message = ctx.message.text as string;
+  async parseText(message: Api.Message, companyId: number): Promise<IDocument> {
+    const text = message.text;
 
-    const source = await this.prisma.companySource.findFirst({
-      where: {
-        type: 'chat',
-        link: String(ctx.chat.id),
-      },
-    });
+    return {
+      id: this.getIdFromMessage(companyId, message),
+      content: text,
+      meta: await this.getMetaFromCtx(message, 'telegram', 'message'),
+    };
+  }
 
-    if (!source) {
+  async onText(message: Api.Message, source: CompanySource, answer = true) {
+    const document = await this.parseText(message, source.companyId);
+
+    let replyMessage: Api.Message | undefined;
+    if (message.replyTo) {
+      replyMessage = await message.getReplyMessage();
+    }
+
+    const isMentioned = document.content.includes(
+      this.configService.get('TELEGRAM_USERNAME'),
+    ) || replyMessage?.senderId.toString() === this.me.id.toString()
+
+    if (answer && isMentioned) {
+      await this.onAsk(message, replyMessage);
       return;
     }
 
-    if (
-      message.includes(this.configService.get('TELEGRAM_BOT_ID')) ||
-      ctx.message.reply_to_message?.from.username ===
-        this.configService.get('TELEGRAM_BOT_ID')
-    ) {
-      await this.onAsk(ctx);
-      return;
-    }
-
-    const meta = this.getMetaFromCtx(ctx, 'telegram-message');
-
-    if (process.env.NODE_ENV === 'dev' || source.companyId === 2) {
+    if (answer && (process.env.NODE_ENV === 'dev' || source.companyId === 2)) {
       this.agent
-        .suggest(message, source.companyId, meta)
+        .suggest(document.content, source.companyId, document.meta)
         .then(async (answer) => {
           if (!answer) return;
 
-          await ctx.reply(answer, {
-            parse_mode: 'Markdown',
-            disable_notification: true,
-            reply_parameters: { message_id: ctx.message.message_id },
+          await message.reply({
+            message: answer,
+            parseMode: 'markdown',
+            silent: true,
           });
         })
         .catch((err) => {
@@ -306,128 +324,153 @@ export class TelegramService {
         });
     }
 
-    await this.agent.addToContext(message, source.companyId, meta);
+    await this.agent.addToContext(source.companyId, [document]);
   }
 
-  async onDocument(ctx) {
-    const source = await this.prisma.companySource.findFirst({
-      where: {
-        link: String(ctx.chat.id),
-        type: 'chat',
+  async onFile(
+    message: Api.Message,
+    source: CompanySource,
+    priority = 1,
+    answer = true,
+  ) {
+    await this.documentsQueue.add(
+      {
+        companyId: source.companyId,
+        sourceId: source.id,
+        source: 'telegram',
+        type: 'file',
+        chatId: message.chatId,
+        messageId: message.id,
+        answer,
       },
-      include: { company: true },
-    });
-
-    if (!source) {
-      return;
-    }
-
-    const link = await ctx.telegram.getFileLink(ctx.message.document.file_id);
-
-    this.agent
-      .uploadFileViaLink(source.company.id, link, {
-        date: new Date(ctx.message.date * 1000).toISOString(),
-        type: 'telegram-file',
-        chatId: ctx.chat.id,
-        chatTitle: ctx.chat.title,
-        authorUsername: ctx.message.from.username,
-        authorFirstName: ctx.message.from.first_name,
-      })
-      .catch((err) => {
-        console.error(err);
-      });
-  }
-
-  async onVoice(ctx) {
-    const source = await this.prisma.companySource.findFirst({
-      where: {
-        link: String(ctx.chat.id),
-        type: 'chat',
-      },
-      include: { company: true },
-    });
-
-    if (!source) {
-      return;
-    }
-
-    const link: string = await ctx.telegram.getFileLink(
-      ctx.message.voice.file_id,
+      { priority },
     );
-    const response = await fetch(link, {
-      method: 'GET',
-    });
-    const transcript = await this.agent.parseAudio(response);
-
-    const meta = this.getMetaFromCtx(ctx, 'telegram-message');
-
-    await this.agent.addToContext(transcript, source.companyId, meta);
   }
 
-  async onPhoto() {}
+  async downloadAndProcessFile(file) {
+    const [message] = await this.client.getMessages(file.chatId, {
+      ids: file.messageId,
+    });
 
-  async callbackAuthGoogleCalendar(chatId: number, sourceId: number) {
-    const calendars = await this.googleWorkspace.listCalendars(sourceId);
+    if (!message) {
+      Logger.warn('Message not found');
 
-    if (!calendars.length) {
-      return this.bot.telegram.sendMessage(chatId, 'You dont have calendars');
+      return;
     }
 
-    await this.bot.telegram.sendMessage(
-      chatId,
-      'Choose calendar:',
-      Markup.inlineKeyboard(
-        calendars.map((c, i) => {
-          const data = `select-calendar-${i}-${sourceId}`;
-          return {
-            text: c.summary,
-            callback_data: data,
-          };
+    const document = message.document || message.voice || message.audio;
+
+    console.log(document);
+
+    // if size is more than 2Gb -> skip
+    if (('size' in document) && Number(document.size.toString()) > 2147483648) {
+      Logger.debug('Skip file')
+      return;
+    }
+
+
+    const fileIter = this.client.iterDownload({
+      file: new Api.InputDocumentFileLocation({
+        id: document.id,
+        accessHash: document.accessHash,
+        fileReference: document.fileReference,
+        thumbSize: '0',
+      }),
+      requestSize: 1000000,
+    });
+
+    const stream = Readable.from(fileIter);
+    let downloadedSize = 0;
+    stream.on('data', (chunk) => {
+      downloadedSize += chunk.length;
+
+      Logger.log(
+        `File ${document.id} downloaded: ${((downloadedSize / document.size.toJSNumber()) * 100).toPrecision(2)}%`,
+      );
+    });
+
+    await this.agent.uploadFile(
+      this.getIdFromMessage(file.companyId, message),
+      file.companyId,
+      stream,
+      document.mimeType,
+      await this.getMetaFromCtx(message, 'telegram', 'file'),
+    );
+
+    if (file.answer) {
+      await this.client.invoke(
+        new Api.messages.SendReaction({
+          msgId: message.id,
+          peer: await message.getChat(),
+          reaction: [new Api.ReactionEmoji({ emoticon: '✍️' })],
         }),
-      ),
+      );
+    }
+  }
+
+  async parseVoice(
+    message: Api.Message,
+    companyId: number,
+  ): Promise<IDocument> {
+    const voice = this.client.iterDownload({
+      file: new Api.InputDocumentFileLocation({
+        id: message.voice.id,
+        accessHash: message.voice.accessHash,
+        fileReference: message.voice.fileReference,
+        thumbSize: '0',
+      }),
+      requestSize: 1000000,
+    });
+
+    const transcript = await this.agent.parseAudio(
+      await toFile(Readable.from(voice), 'voice', {
+        type: message.voice.mimeType,
+      }),
     );
-  }
 
-  async onSelectCalendar(ctx: CoworkerContext) {
-    await this.googleWorkspace.addCalendarSource(ctx.match[2], ctx.match[1]);
-
-    await ctx.reply(`Your calendar was added`);
-  }
-
-  async callbackGithub(chatId: string) {
-    await this.bot.telegram.sendMessage(chatId, 'Github was added');
-  }
-
-  private getMetaFromCtx(ctx, type) {
     return {
-      date: new Date(ctx.message.date * 1000).toISOString(),
-      type,
-      chatId: ctx.chat.id,
-      chatTitle: ctx.chat.title,
-      authorUsername: ctx.message.from.username,
-      authorFirstName: ctx.message.from.first_name,
+      id: this.getIdFromMessage(companyId, message),
+      content: transcript,
+      meta: await this.getMetaFromCtx(message, 'telegram', 'message'),
     };
   }
 
-  @OnEvent('sources.connected')
-  onEvent({ source, state }) {
-    if (state.returnTo.type !== 'telegram') {
-      return;
-    }
+  async onVoice(message: Api.Message, source: CompanySource) {
+    const document = await this.parseVoice(message, source.companyId);
 
-    switch (source.type) {
-      case 'gcalendar':
-        this.callbackAuthGoogleCalendar(state.returnTo.chatId, source.id).catch(
-          (err) => Logger.error(err),
-        );
-        break;
-      case 'github':
-        this.callbackGithub(state.returnTo.chatId);
-        break;
-    }
+    await this.agent.addToContext(source.companyId, [document]);
+  }
+
+  private getIdFromMessage(companyId: number, message: Api.Message) {
+    return `${companyId}-${message.chatId}-${message.id}`;
+  }
+
+  private async getMetaFromCtx(
+    message: Api.Message,
+    source: string,
+    type: string,
+  ) {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-expect-error
+    const [chat, sender]: [Api.Chat, Api.User] = await Promise.all([
+      message.getChat(),
+      message.getSender(),
+    ]);
+
+    return {
+      source,
+      type,
+      date: new Date(message.date * 1000).toISOString(),
+      chatId: message.chatId.toJSNumber(),
+      chatTitle: chat?.title,
+      authorUsername: sender?.username,
+      authorFirstName: sender?.firstName,
+      authorLastName: sender?.lastName,
+      role: this.me.id.toString() === message.senderId.toString()? 'assistant': 'user',
+    };
   }
 
   beforeApplicationShutdown() {
-    this.bot.stop();
+    this.client.disconnect();
   }
 }

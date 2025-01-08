@@ -24,5 +24,7 @@ model CompanySource {
   companyId Int
 
   meta Json?
+
+  @@unique([companyId, link])
 }
 

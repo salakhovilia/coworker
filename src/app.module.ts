@@ -8,6 +8,11 @@ import { PrismaService } from './prisma/prisma.service';
 import { GoogleWorkspaceService } from './google-workspace/google-workspace.service';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { GithubService } from './github/github.service';
+import { TelegramAdminService } from './telegram/telegram-admin.service';
+import { BullModule } from '@nestjs/bull';
+import { DocumentsQueue } from './queues/documents.queue';
+import { Queues } from './queues/queues';
+import * as process from 'node:process';
 
 let configPath = '.env';
 if (process.env.NODE_ENV !== 'production') {
@@ -21,6 +26,15 @@ if (process.env.NODE_ENV !== 'production') {
       envFilePath: configPath,
     }),
     EventEmitterModule.forRoot(),
+    BullModule.forRoot({
+      redis: {
+        host: process.env.NODE_ENV === 'production' ? 'redis' : 'localhost',
+        port: 6379,
+      },
+    }),
+    BullModule.registerQueue({
+      name: Queues.Documents,
+    }),
   ],
   controllers: [AppController],
   providers: [
@@ -28,8 +42,10 @@ if (process.env.NODE_ENV !== 'production') {
     PrismaService,
     AgentService,
     TelegramService,
+    TelegramAdminService,
     GoogleWorkspaceService,
     GithubService,
+    DocumentsQueue,
   ],
 })
 export class AppModule {}

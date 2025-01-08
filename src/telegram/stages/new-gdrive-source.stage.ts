@@ -4,6 +4,7 @@ import { CoworkerContext } from '../context';
 import { ScenesIds } from './scenes';
 import { BaseScene } from 'telegraf/typings/scenes';
 import { GoogleWorkspaceService } from '../../google-workspace/google-workspace.service';
+import { RESPONSES } from '../responses';
 
 export function newGoogleDriveSourceStageFactory(
   prisma: PrismaService,
@@ -13,7 +14,7 @@ export function newGoogleDriveSourceStageFactory(
     ScenesIds.newGoogleDriveSource,
   );
   newSourceScene.enter(async (ctx: CoworkerContext) => {
-    await ctx.editMessageText('Allow access to your account');
+    await ctx.editMessageText(RESPONSES.addGoogleDrive);
     await ctx.editMessageReplyMarkup(
       Markup.inlineKeyboard([
         Markup.button.url(

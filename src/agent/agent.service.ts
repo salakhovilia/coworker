@@ -1,13 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Company, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import * as process from 'node:process';
-import { FormData } from 'formdata-node';
+import * as FormData from 'form-data';
 import { GoogleWorkspaceService } from '../google-workspace/google-workspace.service';
 import { Uploadable } from 'openai/uploads';
+import { Readable } from 'stream';
+
+export interface IDocument {
+  id: string;
+  content: string;
+  meta: Record<string, string | number>;
+}
 
 @Injectable()
 export class AgentService {
@@ -29,15 +36,10 @@ export class AgentService {
     });
   }
 
-  async addToContext(
-    content: string,
-    companyId: number,
-    meta: Record<string, any>,
-  ) {
-    await this.agentApi.post('/text', {
-      content,
+  async addToContext(companyId: number, documents: IDocument[]) {
+    await this.agentApi.post('/documents', {
       companyId,
-      meta,
+      documents,
     });
   }
 
@@ -108,46 +110,23 @@ export class AgentService {
   }
 
   async uploadFile(
-    company: Company,
-    file: ReadableStream,
+    id: string,
+    companyId: number,
+    file: Readable,
     mimetype: string,
-    contentLength: string,
-    contentType: string,
+    meta: Record<string, any>,
   ) {
-    const allowedTypes = [
-      // 'text/x-c',
-      // 'text/x-csharp',
-      // 'text/x-c++',
-      // 'application/msword',
-      // 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      // 'text/html',
-      // 'text/x-java',
-      // 'application/json',
-      'text/markdown',
-      'application/pdf',
-      // 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      // 'text/x-python',
-      // 'text/x-script.python',
-      // 'text/x-ruby',
-      // 'text/x-tex',
-      'text/plain',
-      // 'text/css',
-      // 'text/javascript',
-      // 'application/x-sh',
-      // 'application/typescript',
-    ];
-
-    if (!allowedTypes.includes(mimetype)) {
-      return;
-    }
-
     const form = new FormData();
-    form.set('file', file);
+    form.append('id', id);
+    form.append('companyId', companyId);
+    form.append('file', file, {
+      filename: 'mock',
+      contentType: mimetype,
+    });
+    form.append('meta', JSON.stringify(meta));
 
-    await this.agentApi.post('/files', form, {
-      params: {
-        companyId: company.id,
-      },
+    await this.agentApi.postForm('/files', form, {
+      headers: form.getHeaders(),
     });
   }
 

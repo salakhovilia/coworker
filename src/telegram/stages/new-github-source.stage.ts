@@ -4,6 +4,7 @@ import { CoworkerContext } from '../context';
 import { ScenesIds } from './scenes';
 import { BaseScene } from 'telegraf/typings/scenes';
 import { GithubService } from '../../github/github.service';
+import { RESPONSES } from '../responses';
 
 export function newGithubSourceStageFactory(
   prisma: PrismaService,
@@ -13,7 +14,7 @@ export function newGithubSourceStageFactory(
     ScenesIds.newGithubSource,
   );
   newSourceScene.enter(async (ctx: CoworkerContext) => {
-    await ctx.editMessageText('Install an application');
+    await ctx.editMessageText(RESPONSES.addGithub);
     await ctx.editMessageReplyMarkup(
       Markup.inlineKeyboard([
         Markup.button.url(

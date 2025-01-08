@@ -1,7 +1,6 @@
 import os
 import sys
 
-import psycopg
 from llama_index.core import VectorStoreIndex
 from llama_index.vector_stores.postgres import PGVectorStore
 from psycopg_pool import AsyncConnectionPool

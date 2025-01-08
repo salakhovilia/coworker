@@ -5,9 +5,14 @@ import { message } from 'telegraf/filters';
 import { ScenesIds } from './scenes';
 import { BaseScene } from 'telegraf/typings/scenes';
 import { Logger } from '@nestjs/common';
+import { TelegramService } from '../telegram.service';
+import { Queue } from 'bull';
+import { RESPONSES } from '../responses';
 
 export function newTelegramSourceStageFactory(
   prisma: PrismaService,
+  telegram: TelegramService,
+  queue: Queue,
 ): BaseScene<CoworkerContext> {
   const newSourceScene = new Scenes.BaseScene<CoworkerContext>(
     ScenesIds.newTelegramSource,
@@ -15,9 +20,7 @@ export function newTelegramSourceStageFactory(
   newSourceScene.enter(async (ctx: CoworkerContext) => {
     ctx.session.newChatId = undefined;
 
-    await ctx.editMessageText(
-      'You have to add @CoWorkerBot to chat, copy result of /chatId and paste there',
-    );
+    await ctx.editMessageText(RESPONSES.addTelegram);
   });
 
   newSourceScene.on(message('text'), async (ctx) => {
@@ -25,7 +28,7 @@ export function newTelegramSourceStageFactory(
 
     let chat;
     try {
-      chat = await ctx.telegram.getChat(chatId);
+      chat = await telegram.getChat(chatId);
     } catch (err) {
       return ctx.reply(err);
     }
@@ -40,6 +43,16 @@ export function newTelegramSourceStageFactory(
         },
       })
       .then(() => {
+        queue.add(
+          {
+            source: 'telegram',
+            type: 'chat',
+            chatId,
+          },
+          {
+            priority: 2,
+          },
+        );
         ctx.reply('Done');
       })
       .catch((err) => {
