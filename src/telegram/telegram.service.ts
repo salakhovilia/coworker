@@ -216,6 +216,7 @@ export class TelegramService {
 
     if (!source) {
       return message.reply({ message: 'Source not found' });
+
     }
 
     let question = message.text;

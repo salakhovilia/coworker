@@ -217,6 +217,7 @@ export class GoogleWorkspaceService {
   generateAuthUrlForDrive(state: IState): string {
     return this.generateAuthUrl(state, [
       'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/drive.file',
     ]);
   }
 
